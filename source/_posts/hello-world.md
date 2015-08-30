@@ -1,4 +1,6 @@
 title: 迁移到github博客的第一个页面
+categories: 杂项
+tags: hexo,markdown
 ---
 经过一番的折腾，还是把博客变成静态的了，github + [hexo](http://hexo.io/) ，大道至简~
 
