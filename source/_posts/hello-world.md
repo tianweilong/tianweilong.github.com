@@ -1,37 +1,34 @@
-title: Hello World
+title: 迁移到github博客的第一个页面
 ---
-Welcome to [Hexo](http://hexo.io/)! This is your very first post. Check [documentation](http://hexo.io/docs/) for more info. If you get any problems when using Hexo, you can find the answer in [troubleshooting](http://hexo.io/docs/troubleshooting.html) or you can ask me on [GitHub](https://github.com/hexojs/hexo/issues).
+经过一番的折腾，还是把博客变成静态的了，github + [hexo](http://hexo.io/) ，大道至简~
 
-## Quick Start
 
-### Create a new post
+## Markdown 一行代码的几种写法
 
-``` bash
-$ hexo new "My New Post Hello World bbbfjkdjkfjdsk"
+### 一点式
+`echo "Hello World!";`
+
+### 三点式
+
+``` php
+echo "Hello World!";
 ```
 
-More info: [Writing](http://hexo.io/docs/writing.html)
+### 行内式
+<!--php
+<?php
+	echo "Hello World!";
+?>
+-->
 
-### Run server
+### 缩进式
+	<?php
+		echo "Hello World";
+	?>
 
-``` bash
-$ hexo server
-```
-
-More info: [Server](http://hexo.io/docs/server.html)
-
-### Generate static files
-
-``` bash
-$ hexo generate
-```
-
-More info: [Generating](http://hexo.io/docs/generating.html)
-
-### Deploy to remote sites
-
-``` bash
-$ hexo deploy
-```
-
-More info: [Deployment](http://hexo.io/docs/deployment.html)
+### Hexo式
+『% codeblock [Hello World Demo] [lang:php] %』
+	<?php
+		echo "Hello World";
+	?>
+『% endcodeblock %』

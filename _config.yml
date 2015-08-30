@@ -5,9 +5,8 @@
 # Site
 title: VINO
 subtitle:
-description:
+description: LOVE wat u do. DO it GREAT.
 author: Tian Weilong
-avatar: https://avatars1.githubusercontent.com/u/3870357?v=3&s=460
 language: zh-Hans
 timezone: Asia/Shanghai
 
@@ -66,9 +65,46 @@ pagination_dir: page
 ## Themes: http://hexo.io/themes/
 theme: next
 
+# Feed
+feed:
+	type: atom
+	path: atom.xml
+	limit: 20
+
+# Configs for theme next start
+avatar: https://avatars1.githubusercontent.com/u/3870357?v=3&s=460
+since: 2014
+# Index / Archive / Tag
+index_generator:
+  per_page: 10
+
+archive_generator:
+  per_page: 20
+  yearly: true
+  monthly: true
+
+tag_generator:
+  per_page: 10
+
+# Social links 
+social: 
+    github: https://github.com/tianweilong
+
+# Friend Links
+links_title: Links
+links: 
+    HackingWithPHP: http://www.hackingwithphp.com/
+
+# Duoshuo
+duoshuo_shortname: lovewhatyoudo
+duoshuo_hotartical: true
+
+# Configs for theme next end
+
 # Deployment
 ## Docs: http://hexo.io/docs/deployment.html
 deploy:
     type: git
     repo: git@github.com:tianweilong/tianweilong.github.com.git
     branch: master            
+
