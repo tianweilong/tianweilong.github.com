@@ -5,17 +5,16 @@ title: 迁移到github博客的第一个页面
 
 ## Markdown 一行代码的几种写法
 
-### 一点式
-`echo "Hello World!";`
+### 行内式
+`<?php echo "Hello World!"; ?>`
 
 ### 三点式
 
 ``` php
-echo "Hello World!";
+<?php
+	echo "Hello World!";
+?>
 ```
-
-### 行内式
-<!--echo "Hello World!";-->
 
 ### 缩进式
 	<?php
