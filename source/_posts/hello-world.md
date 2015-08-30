@@ -1,4 +1,6 @@
 title: 迁移到github博客的第一个页面
+tags: [hexo,markdown]
+description: 博客搬迁至github的第一个页面，记录一些和hexo以及markdown相关的东西
 categories: 杂项
 ---
 
