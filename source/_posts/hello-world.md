@@ -15,11 +15,7 @@ echo "Hello World!";
 ```
 
 ### 行内式
-<!--php
-<?php
-	echo "Hello World!";
-?>
--->
+<!--echo "Hello World!";-->
 
 ### 缩进式
 	<?php
@@ -27,8 +23,8 @@ echo "Hello World!";
 	?>
 
 ### Hexo式
-『% codeblock [Hello World Demo] [lang:php] %』
+{% codeblock Hello World Demo lang:php %}
 	<?php
 		echo "Hello World";
 	?>
-『% endcodeblock %』
+{% endcodeblock %}
