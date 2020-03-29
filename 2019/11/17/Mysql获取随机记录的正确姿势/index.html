@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <!-- hexo-inject:begin --><!-- hexo-inject:end --><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 3.9.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/font-awesome.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"blog.tianwl.com","root":"/","scheme":"Muse","version":"7.7.2","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="做过论坛系统的同学可能遇到过这样的需求：在首页随机给用户推荐10条主题帖，或者在用户个人中心随机给用户推荐3个同城的用户等等。如果让你来实现这样的需求，你会怎么去做？可能有些人第一反应就是使用类似select * from some_table order by rand() limit 10;这样的语句。可是他们很快就会发现，随着表数据量的增大，这个语句变得越来越慢，甚至影响到了页面打开的速度。">
+<meta name="keywords" content="mysql,随机,排序">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Mysql获取随机记录的正确姿势">
+<meta property="og:url" content="http://blog.tianwl.com/2019/11/17/Mysql获取随机记录的正确姿势/index.html">
+<meta property="og:site_name" content="VINO">
+<meta property="og:description" content="做过论坛系统的同学可能遇到过这样的需求：在首页随机给用户推荐10条主题帖，或者在用户个人中心随机给用户推荐3个同城的用户等等。如果让你来实现这样的需求，你会怎么去做？可能有些人第一反应就是使用类似select * from some_table order by rand() limit 10;这样的语句。可是他们很快就会发现，随着表数据量的增大，这个语句变得越来越慢，甚至影响到了页面打开的速度。">
+<meta property="og:locale" content="zh-CN">
+<meta property="og:image" content="http://blog.tianwl.com/2019/11/17/Mysql获取随机记录的正确姿势/index/explain.png">
+<meta property="og:image" content="http://blog.tianwl.com/2019/11/17/Mysql获取随机记录的正确姿势/index/all.png">
+<meta property="og:image" content="http://blog.tianwl.com/2019/11/17/Mysql获取随机记录的正确姿势/index/rowid.png">
+<meta property="og:updated_time" content="2020-03-28T13:55:03.326Z">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Mysql获取随机记录的正确姿势">
+<meta name="twitter:description" content="做过论坛系统的同学可能遇到过这样的需求：在首页随机给用户推荐10条主题帖，或者在用户个人中心随机给用户推荐3个同城的用户等等。如果让你来实现这样的需求，你会怎么去做？可能有些人第一反应就是使用类似select * from some_table order by rand() limit 10;这样的语句。可是他们很快就会发现，随着表数据量的增大，这个语句变得越来越慢，甚至影响到了页面打开的速度。">
+<meta name="twitter:image" content="http://blog.tianwl.com/2019/11/17/Mysql获取随机记录的正确姿势/index/explain.png">
+
+<link rel="canonical" href="http://blog.tianwl.com/2019/11/17/Mysql获取随机记录的正确姿势/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>Mysql获取随机记录的正确姿势 | VINO</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript><!-- hexo-inject:begin --><!-- hexo-inject:end -->
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <!-- hexo-inject:begin --><!-- hexo-inject:end --><div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">VINO</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-fw fa-home"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-fw fa-archive"></i>归档</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post">
+            
+
+  <div class="posts-expand">
+      
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="http://blog.tianwl.com/2019/11/17/Mysql获取随机记录的正确姿势/index.html">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars1.githubusercontent.com/u/3870357?v=3&s=460">
+      <meta itemprop="name" content="Tian Weilong">
+      <meta itemprop="description" content="LOVE wat u do. DO it GREAT.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="VINO">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Mysql获取随机记录的正确姿势
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="fa fa-calendar-o"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2019-11-17 15:13:16" itemprop="dateCreated datePublished" datetime="2019-11-17T15:13:16+08:00">2019-11-17</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="fa fa-folder-o"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/数据库/" itemprop="url" rel="index"><span itemprop="name">数据库</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>做过论坛系统的同学可能遇到过这样的需求：在首页随机给用户推荐10条主题帖，或者在用户个人中心随机给用户推荐3个同城的用户等等。如果让你来实现这样的需求，你会怎么去做？可能有些人第一反应就是使用类似<code>select * from some_table order by rand() limit 10;</code>这样的语句。可是他们很快就会发现，随着表数据量的增大，这个语句变得越来越慢，甚至影响到了页面打开的速度。这是为什么呢？</p>
+<a id="more"></a>
+<p>简单起见，我们还是以在 <a href="/2019/11/16/浅析order-by工作原理/index.html" title="浅析order by工作原理">浅析order by工作原理</a>提到的用户表为例，表结构如下：<br><figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">create table `user` (</span><br><span class="line">    id int auto_increment primary key,</span><br><span class="line">    name varchar(64),</span><br><span class="line">    email varchar(128),</span><br><span class="line">    province varchar(16)</span><br><span class="line">) engine=InnoDB, charset=utf8mb4;</span><br></pre></td></tr></table></figure></p>
+<p>业务场景是这样的：<strong>随机获取系统中的三个用户推荐给某个用户</strong>。为了便于讨论，不排除三个用户中包含当前用户的情况。</p>
+<p>为了便于量化说明，我使用如下的存储过程向表里面插入了50000行记录：<br><figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br></pre></td><td class="code"><pre><span class="line">delimiter ;;</span><br><span class="line">create procedure seed_user()</span><br><span class="line">begin</span><br><span class="line">  declare i int;</span><br><span class="line">  declare r int;</span><br><span class="line">  declare province char(10) character set utf8;</span><br><span class="line">  set i=1;</span><br><span class="line"></span><br><span class="line"></span><br><span class="line">  while(i &lt;= 50000) do</span><br><span class="line">    set r=floor(rand() * 5);</span><br><span class="line"></span><br><span class="line">	if r=1  then</span><br><span class="line">	  set province=&apos;广东省&apos;;</span><br><span class="line">	elseif r=2 then</span><br><span class="line">	  set province=&apos;安徽省&apos;;</span><br><span class="line">	elseif r=3 then</span><br><span class="line">	  set province=&apos;广西省&apos;;</span><br><span class="line">	elseif r=4 then</span><br><span class="line">	  set province=&apos;福建省&apos;;</span><br><span class="line">	else</span><br><span class="line">	  set province=&apos;广东省&apos;;</span><br><span class="line">	end if;</span><br><span class="line"></span><br><span class="line">    insert into user (id, `province`, name, email) values (i, province, substring(MD5(RAND()),1,10), concat(substring(MD5(RAND()),1,10), &apos;@qq.com&apos;));</span><br><span class="line">    set i=i+1;</span><br><span class="line">  end while;</span><br><span class="line">end;;</span><br><span class="line">delimiter ;</span><br></pre></td></tr></table></figure></p>
+<p>接下来我们就来看一下有哪些获取三个随机用户的方法，以及它们各自存在的问题。</p>
+<h3 id="内存临时表"><a href="#内存临时表" class="headerlink" title="内存临时表"></a>内存临时表</h3><p>首先，就是开篇提到的<code>order by rand()</code>来实现，语句如下：<br><figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">select `name`, `email`, `province` from user order by rand() limit 3;</span><br></pre></td></tr></table></figure></p>
+<p>按照惯例，我们用<code>explain</code>来看一下这个语句的执行计划，如下图：</p>
+<p><img src="/2019/11/17/Mysql获取随机记录的正确姿势/index/explain.png" alt="使用explain查看执行计划"></p>
+<p>注意<code>Extra</code>字段中<code>Using temporary</code> 表示需要使用临时表，<code>Using filesort</code>表示需要执行排序操作。</p>
+<p>而在<a href="/2019/11/16/浅析order-by工作原理/index.html" title="浅析order by工作原理">浅析order by工作原理</a>中我们提到过有两种排序算法：全字段排序和rowid排序，这里再贴一下两种算法的排序流程图：</p>
+<p><img src="/2019/11/17/Mysql获取随机记录的正确姿势/index/all.png" alt="全字段排序流程图"></p>
+<p><img src="/2019/11/17/Mysql获取随机记录的正确姿势/index/rowid.png" alt="rowid排序流程图"></p>
+<p>由于执行全字段排序会减少一步回表的磁盘访问，InnoDB会优先选择这个算法。而对于内存表，回表的过程是直接访问内存得到数据，根本不会导致多访问磁盘，因此优化器优先考虑的是用于排序的行越小越好，也就是说Mysql这时候会选择rowid排序算法。</p>
+<p>因此这条语句的执行流程如下：</p>
+<ul>
+<li>使用memory引擎创建一个临时表，表里有四个字段，分别记为 <code>name</code>、<code>email</code>、<code>province</code> 和 <code>rand</code>，并且这个表没有创建索引。</li>
+<li>从<code>user</code>表中，按主键顺序取出所有的记录值(包含<code>name</code>、<code>email</code>、<code>province</code>)，对于每一行记录，调用rand()函数生成一个大于0小于1的随机小数作为<code>rand</code>字段值，并把这些记录存入临时表对应的字段中。到此，扫描的行数是<code>user</code>表的总行数50000行。</li>
+</ul>
+<p>接下来，需要在没有所有的临时表上对<code>rand</code>字段排序：</p>
+<ul>
+<li>初始化<code>sort_buffer</code>。<code>sort_buffer</code>中有两个字段，记为<code>rand</code> 和 <code>pos</code>。</li>
+<li>从临时表中一行一行地取出<code>rand</code>和<code>pos</code>值(暂且将内存临时表看做一个数组，这个pos可以看做是这条记录在数组内的索引)，分别存入<code>sort_buffer</code>的两个字段里。这个过程也要对内存临时表做全表扫描，此时扫描的行数增加50000，变成了100000。</li>
+<li>在<code>sort_buffer</code>中根据<code>rand</code>值进行排序，由于这个过程没有涉及到表操作，不会增加扫描行数。</li>
+<li>排序完成以后，取出前三个结果的位置信息(<code>pos</code>)，依次到内存临时表中取出其他字段的值，返回给客户端，这个过程中，访问了表的三行数据，总扫描行数变成了100003。</li>
+</ul>
+<p>接下来我们开启系统的慢查询日志，验证一下扫描行数是否正确：<br><figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">//开启慢查询日志</span><br><span class="line">set global slow_query_log = On;</span><br><span class="line"></span><br><span class="line">//将所有的查询记入日志</span><br><span class="line">set long_query_time = 0;</span><br><span class="line"></span><br><span class="line">//执行获取随机用户的语句</span><br><span class="line">select `name`, `email`, `province` from user order by rand() limit 3;</span><br></pre></td></tr></table></figure></p>
+<p>打开数据库的慢查询日志文件，得到如下信息：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"># Query_time: 0.065017  Lock_time: 0.000206 Rows_sent: 3  Rows_examined: 100003</span><br><span class="line">SET timestamp=1573978672;</span><br><span class="line">select `name`, `email`, `province` from user order by rand() limit 3;</span><br></pre></td></tr></table></figure>
+<p>可以看到<code>Rows_examined</code>为100003，和我们分析的结论一致。</p>
+<h3 id="磁盘临时表"><a href="#磁盘临时表" class="headerlink" title="磁盘临时表"></a>磁盘临时表</h3><p>那么是不是所有的临时表都是内存临时表呢？当然不是，<code>tmp_table_size</code>这个配置指定了内存临时表的大小，默认值是16M。和<code>sort_buffer</code>的机制类似，如果临时表大小超过了<code>tmp_table_size</code>，那么内存临时表就会转成磁盘临时表。</p>
+<p>磁盘临时表默认使用InnoDB引擎，当使用磁盘临时表的时候，对应的就是一个没有显式索引的InnoDB表的排序过程。</p>
+<p>下面我们来复现一下这个过程，我先把<code>tmp_table_size</code>设置一个较小的值128，把<code>sort_buffer_size</code>设置成10240，把<code>max_length_for_sort_data</code>设置成8。</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">set tmp_table_size=128;</span><br><span class="line">set sort_buffer_size=10240;</span><br><span class="line">set max_length_for_sort_data=8;</span><br><span class="line"></span><br><span class="line">/* 打开 optimizer_trace，只对本线程有效 */</span><br><span class="line">SET optimizer_trace=&apos;enabled=on&apos;; </span><br><span class="line"></span><br><span class="line">/* 执行语句 */</span><br><span class="line">select `name`, `email`, `province` from user order by rand() limit 3;</span><br><span class="line"></span><br><span class="line">/* 查看 OPTIMIZER_TRACE 输出 */</span><br><span class="line">SELECT * FROM `information_schema`.`OPTIMIZER_TRACE`\G</span><br></pre></td></tr></table></figure>
+<p>截取部分输出如下：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">&quot;filesort_summary&quot;: &#123;</span><br><span class="line">    &quot;rows&quot;: 4,</span><br><span class="line">    &quot;examined_rows&quot;: 50000,</span><br><span class="line">    &quot;number_of_tmp_files&quot;: 0,</span><br><span class="line">    &quot;sort_buffer_size&quot;: 88,</span><br><span class="line">    &quot;sort_mode&quot;: &quot;&lt;sort_key, rowid&gt;&quot;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>因为将<code>max_length_for_sort_data</code>设置为8，小于<code>name</code>字段的长度定义，所以<code>sort_mode</code>显示采用的是rowid排序算法，这是符合预期的。但是数据总行数是50000行，显然超过了<code>sort_buffer_size</code>设置的值10240，而<code>number_of_tmp_files</code>居然是0？难道不需要用临时文件吗？</p>
+<p>这个SQL语句确实没有用到临时文件，因为它采用了另外一个排序算法：<code>优先队列排序算法</code>，简单来说，这个算法只需要在内存中维护三个最小值，当出现比这三个值中最大值小的值时，用该值替换掉最大值，当表中数据全部遍历完成以后，这三个最小的值对应的记录就是我们需要的数据。其实不管是<code>limit 3</code> 还是 <code>limit 1000</code>，只要<code>sort_buffer_size</code>能够维护这么多最小值，它就会采用优先队列排序算法，否则就会使用临时文件的归并排序算法。</p>
+<p>当然，不管是采用内存临时表还是采用磁盘临时表，<code>order by rand()</code>这种写法需要扫描的行数和表记录数成正比，排序过程的资源消耗也会很大。</p>
+<h3 id="随机排序方法"><a href="#随机排序方法" class="headerlink" title="随机排序方法"></a>随机排序方法</h3><p>既然<code>order by rand()</code>存在资源消耗大的问题，我们就应该转换一下思路了。先把问题再简化一下，如果只需要随机返回一个用户，可以怎么做呢？</p>
+<ul>
+<li>取这个表的主键id的最大值<code>m</code>和最小值<code>n</code>。</li>
+<li>用随机函数生成一个最大值到最小值之间的数 <code>x</code> = (m-n) * rand() + n。</li>
+<li>取不小于<code>x</code>的第一个id的行。</li>
+</ul>
+<p>为了便于区分，先将这种算法叫做<code>随机算法1</code>，它的效率很高，因为取<code>m</code>和<code>n</code>都是不需要扫描索引的，而第三步也可以用索引快速定位，可以认为就只扫描了3行。但是它有一个潜在的问题，就是当id中有空洞的时候，返回的数据并不是严格随机的。比如当id是<code>[1, 2, 4, 5]</code>时，那么取到<code>id=4</code>这一行的概率是其他行概率的2倍。而如果更稀疏一点，比如id是<code>[1, 2, 400, 401]</code>时，绝大部分情况都会返回400了。</p>
+<p>因此基于<code>随机算法1</code>的思路，再做一下调整：</p>
+<ul>
+<li>取得整个表的行数<code>c</code></li>
+<li>取 <code>x</code> = floor(c * rand())。</li>
+<li>再用 limit x, 1 取得一行。</li>
+</ul>
+<p>我们将这种算法叫做<code>随机算法2</code>，它解决了<code>随机算法1</code>中概率不均匀的问题。第一步取总行数，需要扫描<code>c</code>行，第三步<code>limit x, 1</code>需要扫描<code>x + 1</code>行，因此这个算法总共需要扫描<code>c + x + 1</code>行，执行的代价要比<code>随机算法1</code>高， 但是跟直接<code>order by rand()</code>比起来，代价还是小很多。</p>
+<p>如果要返回三个随机值，只需要再重复两次<code>随机算法2</code>的第二步和第三步即可。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/mysql/" rel="tag"># mysql</a>
+              <a href="/tags/随机/" rel="tag"># 随机</a>
+              <a href="/tags/排序/" rel="tag"># 排序</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2019/11/16/浅析order-by工作原理/index.html" rel="prev" title="浅析order by工作原理">
+      <i class="fa fa-chevron-left"></i> 浅析order by工作原理
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2019/11/19/Mysql军规背后的逻辑/index.html" rel="next" title="Mysql军规背后的逻辑">
+      Mysql军规背后的逻辑 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+  </div>
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-3"><a class="nav-link" href="#内存临时表"><span class="nav-number">1.</span> <span class="nav-text">内存临时表</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#磁盘临时表"><span class="nav-number">2.</span> <span class="nav-text">磁盘临时表</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#随机排序方法"><span class="nav-number">3.</span> <span class="nav-text">随机排序方法</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Tian Weilong"
+      src="https://avatars1.githubusercontent.com/u/3870357?v=3&s=460">
+  <p class="site-author-name" itemprop="name">Tian Weilong</p>
+  <div class="site-description" itemprop="description">LOVE wat u do. DO it GREAT.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">20</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/categories/">
+        <span class="site-state-item-count">4</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+        <span class="site-state-item-count">36</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2020</span>
+  <span class="with-love">
+    <i class="fa fa-user"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Tian Weilong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+<script src="/js/utils.js"></script><script src="/js/motion.js"></script>
+<script src="/js/schemes/muse.js"></script>
+<script src="/js/next-boot.js"></script><!-- hexo-inject:begin --><!-- hexo-inject:end -->
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

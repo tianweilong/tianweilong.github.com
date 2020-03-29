@@ -1,0 +1,827 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <!-- hexo-inject:begin --><!-- hexo-inject:end --><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 3.9.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/font-awesome.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"blog.tianwl.com","root":"/","scheme":"Muse","version":"7.7.2","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="提到数据库事务的应用场景，很多人首先想到的例子就是银行转账，你要给你朋友转58块钱，需要保证转钱动作完成以后，你的账户上少了58块钱，同时你朋友的账户上多出58块钱。而不是你账户上的钱已经扣了，朋友的账户上却没收到这笔钱，这样银行系统就乱套了，没有人敢用。要保证这个扣钱、加钱的动作要么全部成功，要么全部失败，就需要用到数据库的事务。">
+<meta name="keywords" content="mysql,事务隔离">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Mysql事务隔离实例分析">
+<meta property="og:url" content="http://blog.tianwl.com/2019/10/13/Mysql事务隔离实例分析/index.html">
+<meta property="og:site_name" content="VINO">
+<meta property="og:description" content="提到数据库事务的应用场景，很多人首先想到的例子就是银行转账，你要给你朋友转58块钱，需要保证转钱动作完成以后，你的账户上少了58块钱，同时你朋友的账户上多出58块钱。而不是你账户上的钱已经扣了，朋友的账户上却没收到这笔钱，这样银行系统就乱套了，没有人敢用。要保证这个扣钱、加钱的动作要么全部成功，要么全部失败，就需要用到数据库的事务。">
+<meta property="og:locale" content="zh-CN">
+<meta property="og:image" content="http://blog.tianwl.com/2019/10/13/Mysql事务隔离实例分析/index/rollback.png">
+<meta property="og:image" content="http://blog.tianwl.com/2019/10/13/Mysql事务隔离实例分析/index/row.png">
+<meta property="og:image" content="http://blog.tianwl.com/2019/10/13/Mysql事务隔离实例分析/index/visible.png">
+<meta property="og:image" content="http://blog.tianwl.com/2019/10/13/Mysql事务隔离实例分析/index/transaction_a.png">
+<meta property="og:updated_time" content="2020-03-28T13:55:03.318Z">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Mysql事务隔离实例分析">
+<meta name="twitter:description" content="提到数据库事务的应用场景，很多人首先想到的例子就是银行转账，你要给你朋友转58块钱，需要保证转钱动作完成以后，你的账户上少了58块钱，同时你朋友的账户上多出58块钱。而不是你账户上的钱已经扣了，朋友的账户上却没收到这笔钱，这样银行系统就乱套了，没有人敢用。要保证这个扣钱、加钱的动作要么全部成功，要么全部失败，就需要用到数据库的事务。">
+<meta name="twitter:image" content="http://blog.tianwl.com/2019/10/13/Mysql事务隔离实例分析/index/rollback.png">
+
+<link rel="canonical" href="http://blog.tianwl.com/2019/10/13/Mysql事务隔离实例分析/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>Mysql事务隔离实例分析 | VINO</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript><!-- hexo-inject:begin --><!-- hexo-inject:end -->
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <!-- hexo-inject:begin --><!-- hexo-inject:end --><div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">VINO</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-fw fa-home"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-fw fa-archive"></i>归档</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post">
+            
+
+  <div class="posts-expand">
+      
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="http://blog.tianwl.com/2019/10/13/Mysql事务隔离实例分析/index.html">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars1.githubusercontent.com/u/3870357?v=3&s=460">
+      <meta itemprop="name" content="Tian Weilong">
+      <meta itemprop="description" content="LOVE wat u do. DO it GREAT.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="VINO">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Mysql事务隔离实例分析
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="fa fa-calendar-o"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2019-10-13 23:18:45" itemprop="dateCreated datePublished" datetime="2019-10-13T23:18:45+08:00">2019-10-13</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="fa fa-folder-o"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/数据库/" itemprop="url" rel="index"><span itemprop="name">数据库</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>提到数据库事务的应用场景，很多人首先想到的例子就是银行转账，你要给你朋友转58块钱，需要保证转钱动作完成以后，你的账户上少了58块钱，同时你朋友的账户上多出58块钱。而不是你账户上的钱已经扣了，朋友的账户上却没收到这笔钱，这样银行系统就乱套了，没有人敢用。要保证这个扣钱、加钱的动作要么全部成功，要么全部失败，就需要用到数据库的事务。</p>
+<a id="more"></a>
+<p>可能你之前有了解过，Mysql原生的MyISAM引擎不支持事务，而InnoDB引擎支持事务，我们今天通过一些实例来分析一下InnoDB引擎的事务机制。</p>
+<h3 id="事务隔离级别"><a href="#事务隔离级别" class="headerlink" title="事务隔离级别"></a>事务隔离级别</h3><p>当Mysql上有多个事务同时执行时，可能会出现如下三种现象：</p>
+<ul>
+<li><p>脏读<br>某个事务更新了一份数据，另一个事务在它执行期间读取了这份数据，而后这个事务又回滚了，那么后一个事务所读取的数据就是不正确的。</p>
+</li>
+<li><p>不可重复读<br>在一个事务的两次查询之中数据不一致，可能是其他事务在这两次查询中间进行了数据的更新操作。</p>
+</li>
+<li><p>幻读<br>幻读并不是说两次读取获取的结果集不同，幻读侧重的方面是某一次的 select 操作得到的结果所表征的数据状态无法支撑后续的业务操作。更为具体一些：select 某记录是否存在，不存在，准备插入此记录，但执行 insert 时发现此记录已存在，无法插入，此时就发生了幻读。</p>
+</li>
+</ul>
+<p>针对这些现象，Mysql引入了<strong>隔离级别</strong>的概念,这些隔离级别包括如下四种：</p>
+<ul>
+<li><p>读未提交(read uncommitted)<br>指一个事务还未提交，它做的变更就能被别的事务看到。</p>
+</li>
+<li><p>读提交(read committed)<br>指一个事务提交之后，它做的变更才能被别的事务看到。</p>
+</li>
+<li><p>可重复读(repeatable read)<br>指一个事务执行过程中看到的数据，总是跟这个事务启动时<strong>看到</strong>的数据是一致的。注意这个<strong>看到</strong>，是指事务启动时显式查询过的数据，比如对于同一行(id=1, name=”zhangsan”)的数据，在事务启动以后，另一个事务将其更新为(id=1, name=”lisi”)，并且commit，如果前一个事务在后一个事务更新前查询过id=1的数据，则在后一个事务commit以后，前一个事务查询到的数据仍为(id=1, name=”zhangsan”)， 否则前一个事务查询到的数据为(id=1, name=”lisi”)</p>
+</li>
+<li><p>可串行化(serializable)<br>指通过强制事务排序，使之不可能相互冲突，这个主要是通过对记录加锁来实现的，因此可能导致大量的超时现象和锁竞争。</p>
+</li>
+</ul>
+<p>从上往下，隔离效果越来越好，但随之带来的影响就是数据库运行效率越来越低，因此我们应该根据业务需求，合理地选择数据库的事务隔离级别。</p>
+<h3 id="实例分析"><a href="#实例分析" class="headerlink" title="实例分析"></a>实例分析</h3><p>下面我们通过几个简单的实例，来验证一下各隔离级别下事务的行为。  </p>
+<p>首先我们创建一个表demo：<br><figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">create table demo(</span><br><span class="line">    id int auto_increment primary key ,</span><br><span class="line">    name varchar(255)</span><br><span class="line">) engine = InnoDB;</span><br></pre></td></tr></table></figure></p>
+<p>然后插入一条id为1的数据：<br><figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">insert into `demo` (`id`, `name`) values (1, &quot;zhangsan&quot;);</span><br></pre></td></tr></table></figure></p>
+<p>最后，分别在四个隔离级别下，执行下表中的操作，对应的结果也填写在表中，你可以尝试分析一下哪些地方发生了脏读、不可重复读、幻读</p>
+<div class="table-container">
+<table>
+<thead>
+<tr>
+<th style="text-align:left">事务1</th>
+<th style="text-align:center">事务2</th>
+<th style="text-align:center">read uncommitted</th>
+<th style="text-align:center">read committed</th>
+<th style="text-align:center">repeatable read</th>
+<th style="text-align:center">serializable</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">begin;</td>
+<td style="text-align:center">begin;</td>
+<td style="text-align:center"></td>
+<td style="text-align:center"></td>
+<td style="text-align:center"></td>
+<td style="text-align:center"></td>
+</tr>
+<tr>
+<td style="text-align:left">select name from demo where id = 1;</td>
+<td style="text-align:center"></td>
+<td style="text-align:center">zhangsan</td>
+<td style="text-align:center">zhangsan</td>
+<td style="text-align:center">zhangsan</td>
+<td style="text-align:center">zhangsan</td>
+</tr>
+<tr>
+<td style="text-align:left"></td>
+<td style="text-align:center">update demo set name = “lisi” where id = 1;</td>
+<td style="text-align:center"></td>
+<td style="text-align:center"></td>
+<td style="text-align:center"></td>
+<td style="text-align:center">Lock wait timeout exceeded; try restarting transaction</td>
+</tr>
+<tr>
+<td style="text-align:left">select name from demo where id = 1;</td>
+<td style="text-align:center"></td>
+<td style="text-align:center">lisi</td>
+<td style="text-align:center">zhangsan</td>
+<td style="text-align:center">zhangsan</td>
+<td style="text-align:center">zhangsan</td>
+</tr>
+<tr>
+<td style="text-align:left">select name from demo where id = 2;</td>
+<td style="text-align:center"></td>
+<td style="text-align:center">(empty set)</td>
+<td style="text-align:center">(empty set)</td>
+<td style="text-align:center">(empty set)</td>
+<td style="text-align:center">(empty set)</td>
+</tr>
+<tr>
+<td style="text-align:left"></td>
+<td style="text-align:center">insert into demo(id, name) values (2, “wangwu”);</td>
+<td style="text-align:center"></td>
+<td style="text-align:center"></td>
+<td style="text-align:center"></td>
+<td style="text-align:center">Lock wait timeout exceeded; try restarting transaction</td>
+</tr>
+<tr>
+<td style="text-align:left"></td>
+<td style="text-align:center">commit;</td>
+<td style="text-align:center"></td>
+<td style="text-align:center"></td>
+<td style="text-align:center"></td>
+<td style="text-align:center"></td>
+</tr>
+<tr>
+<td style="text-align:left">insert into demo(id, name) values (2, “zhaoliu”);</td>
+<td style="text-align:center"></td>
+<td style="text-align:center">Duplicate entry ‘2’ for key ‘PRIMARY’</td>
+<td style="text-align:center">Duplicate entry ‘2’ for key ‘PRIMARY’</td>
+<td style="text-align:center">Duplicate entry ‘2’ for key ‘PRIMARY’</td>
+<td style="text-align:center"></td>
+</tr>
+<tr>
+<td style="text-align:left">select name from demo where id = 2;</td>
+<td style="text-align:center"></td>
+<td style="text-align:center">wangwu</td>
+<td style="text-align:center">wangwu</td>
+<td style="text-align:center">(empty set)</td>
+<td style="text-align:center">zhaoliu</td>
+</tr>
+<tr>
+<td style="text-align:left">select name from demo where id = 1;</td>
+<td style="text-align:center"></td>
+<td style="text-align:center">lisi</td>
+<td style="text-align:center">lisi</td>
+<td style="text-align:center">zhangsan</td>
+<td style="text-align:center">zhangsan</td>
+</tr>
+<tr>
+<td style="text-align:left">commit;</td>
+<td style="text-align:center"></td>
+<td style="text-align:center"></td>
+<td style="text-align:center"></td>
+<td style="text-align:center"></td>
+<td style="text-align:center"></td>
+</tr>
+<tr>
+<td style="text-align:left">select name from demo where id = 1;</td>
+<td style="text-align:center"></td>
+<td style="text-align:center">lisi</td>
+<td style="text-align:center">lisi</td>
+<td style="text-align:center">lisi</td>
+<td style="text-align:center">zhangsan</td>
+</tr>
+<tr>
+<td style="text-align:left">select name from demo where id = 2;</td>
+<td style="text-align:center"></td>
+<td style="text-align:center">wangwu</td>
+<td style="text-align:center">wangwu</td>
+<td style="text-align:center">wangwu</td>
+<td style="text-align:center">zhaoliu</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>总结一下上表，在四种隔离级别下，分别会出现前面提到的三种现象中的哪几种</p>
+<div class="table-container">
+<table>
+<thead>
+<tr>
+<th style="text-align:left"></th>
+<th style="text-align:center">脏读</th>
+<th style="text-align:center">不可重复读</th>
+<th style="text-align:center">幻读</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">读未提交</td>
+<td style="text-align:center">√</td>
+<td style="text-align:center">√</td>
+<td style="text-align:center">√</td>
+</tr>
+<tr>
+<td style="text-align:left">读提交</td>
+<td style="text-align:center">×</td>
+<td style="text-align:center">√</td>
+<td style="text-align:center">√</td>
+</tr>
+<tr>
+<td style="text-align:left">可重复读</td>
+<td style="text-align:center">×</td>
+<td style="text-align:center">×</td>
+<td style="text-align:center">√</td>
+</tr>
+<tr>
+<td style="text-align:left">可串行化</td>
+<td style="text-align:center">×</td>
+<td style="text-align:center">×</td>
+<td style="text-align:center">×</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>从上表可以得出以下结论，在不调整语句和其他设置的情况下：</p>
+<ul>
+<li>要消除“脏读”的现象，需要将隔离级别至少设置为<strong>读提交</strong></li>
+<li>要消除“不可重复读”的现象，需要将隔离级别至少设置为<strong>可重复读</strong></li>
+<li>要消除“幻读”的现象，需要将隔离级别设置为<strong>可串行化</strong></li>
+</ul>
+<h3 id="事务隔离的实现"><a href="#事务隔离的实现" class="headerlink" title="事务隔离的实现"></a>事务隔离的实现</h3><p>理解了事务的隔离级别，再来看看事务隔离具体是怎么实现的，以“可重复读”为例展开说明。</p>
+<p>在mysql中，每条记录在更新的时候都会同时记录一条回滚操作，记录上的最新值，通过回滚操作，就可以得到前一个状态的值。假设一个值从1通过三次修改一次改成了2、3、4.在回滚日志里面就有类似如下图的记录：</p>
+<p><img src="/2019/10/13/Mysql事务隔离实例分析/index/rollback.png" alt="回滚段"></p>
+<!-- digraph G {
+    fontname="Fangsong"
+    compound=true
+    newrank=true
+    node[fontname="Fangsong"]
+    edge[fontname="Fangsong"]
+
+    subgraph cluster0 {
+        label = "回滚段"
+        labeljust = l
+        1 [label="将2改成1"]
+        2 [label="将3改成2"]
+        3 [label="将4改成3"]
+
+    }
+    4 [label="当前值4", fontcolor=blue]
+
+    A [label="read-view A", shape=plaintext]
+    B [label="read-view B", shape=plaintext]
+    C [label="read-view C", shape=plaintext]
+
+    1->2->3 [dir=back]  
+    3->4 [dir=back]
+
+    A->1 [tailclip=false, style=dotted]
+    B->2 [tailclip=false, style=dotted]
+    C->4 [tailclip=false, style=dotted, weight=3]
+    A->B->C [style=invis]
+
+    {rank=same 1 2 3 4}
+
+    {rank=same A B C}
+} -->
+<p>当前值是4，但是在查询这条记录的时候，不同时刻启动的事务会对应不同的read-view，如图中A、B、C三个视图对应的记录值分别为1、2、4， 同一条记录在系统中可以存在多个版本，就是数据库的<code>多版本并发控制（MVCC）</code>。对于视图A，要得到1，就必须按照图中实线箭头指示的方向依次执行回滚操作得到。有了这个回滚日志，你会发现，即使还有一个事务将4改成了5，这个操作跟视图A、B、C对应的事务没有冲突，这也就达到了隔离的目的。</p>
+<p>然而事情也并非这么简单，我们在 <a href="/2019/10/30/Mysql锁学习笔记/index.html" title="Mysql锁学习笔记">Mysql锁学习笔记</a> 中讨论行锁时，提过一个<code>两阶段锁</code>的概念，一个事务要更新一行，如果刚好另外一个事务拥有这一行的行锁，它就会被锁住，进入等待状态。既然进入了等待状态，那么等到这个事务自己获取到行锁要更新数据的时候，它读到的值又是什么呢？</p>
+<p>来看一个简化的例子，初始化一个数据表：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">create table `demo` (</span><br><span class="line">  `id` int(11) NOT NULL,</span><br><span class="line">  `count` int(11) DEFAULT &apos;0&apos;,</span><br><span class="line">  PRIMARY KEY(`id`)</span><br><span class="line">) ENGINE=InnoDB;</span><br><span class="line"></span><br><span class="line">insert into `demo` (`id`, `count`) values (1, 10), (2, 20);</span><br></pre></td></tr></table></figure>
+<p>依次执行如下事务：</p>
+<div class="table-container">
+<table>
+<thead>
+<tr>
+<th style="text-align:left">事务A</th>
+<th style="text-align:left">事务B</th>
+<th style="text-align:left">事务C</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">start transaction with consistent snapshot;</td>
+<td style="text-align:left"></td>
+<td style="text-align:left"></td>
+</tr>
+<tr>
+<td style="text-align:left"></td>
+<td style="text-align:left">start transaction with consistent snapshot;</td>
+<td style="text-align:left"></td>
+</tr>
+<tr>
+<td style="text-align:left"></td>
+<td style="text-align:left"></td>
+<td style="text-align:left">update demo set count=count+1 where id = 1;</td>
+</tr>
+<tr>
+<td style="text-align:left"></td>
+<td style="text-align:left">update demo set count=count+1 where id = 1;</td>
+<td style="text-align:left"></td>
+</tr>
+<tr>
+<td style="text-align:left"></td>
+<td style="text-align:left">select count from demo where id = 1;</td>
+<td style="text-align:left"></td>
+</tr>
+<tr>
+<td style="text-align:left">select count from demo where id = 1;</td>
+<td style="text-align:left"></td>
+<td style="text-align:left"></td>
+</tr>
+<tr>
+<td style="text-align:left">commit;</td>
+<td style="text-align:left"></td>
+<td style="text-align:left"></td>
+</tr>
+<tr>
+<td style="text-align:left"></td>
+<td style="text-align:left">commit;</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>对于上面三个事务，事务B查到的count值是12， 事务A查到的count值是10，是不是有点一头雾水？</p>
+<p>这里使用<code>start transaction with consistent snapshot</code>目的是为了马上创建一个一致性视图，因为<code>begin</code> 或者 <code>start transaction</code> 执行后并不会马上创建一个一致性视图，而是要等到执行第一个快照读语句时才会创建。 这个<code>一致性视图</code> 就是用于支持读提交、可重复读隔离级别的实现。 它没有物理结构，作用是事务执行期间用来定义“我能看到什么数据”。</p>
+<p>这时候你可能会问，如果一个库有10G的数据，那么我启动一个事务创建一致性视图的时候，是不是要把这10G的数据复制出来？那这个过程应该会很慢，和我们平时执行事务时的感官不一致。实际上也并不需要复制这10G的数据。下面来看看这个一致性视图是怎么实现的。</p>
+<p>InnoDB里面每个事务都有一个唯一的事务ID，叫做<code>transaction id</code>， 严格递增。 而每行数据也有多个版本，每次事务更新数据的时候，会生成一个新的数据版本，并且把<code>transaction id</code> 赋值给这个数据版本的事务ID，记为 <code>row trx_id</code>。同时旧版本的数据要保留，并且在新版本的数据中，能够有信息可以直接拿到它。也就是说，数据表中的一行记录，可能会有多个版本(row)， 每个版本有自己的 <code>row trx_id</code>。</p>
+<p>下图是一个记录被多个事务连续更新后的状态：<br><img src="/2019/10/13/Mysql事务隔离实例分析/index/row.png" alt="行状态变更示意图"></p>
+<!--
+ZGlncmFwaCBHIHsNCiAgICBmb250bmFtZT0iRmFuZ3NvbmciDQogICAgY29tcG91bmQ9dHJ1ZQ0K
+ICAgIG5ld3Jhbms9dHJ1ZQ0KICAgIGxhYmVsPSLooYznirbmgIHlj5jmm7TnpLrmhI/lm75cblxu
+Ig0KICAgIGxhYmVsbG9jPXQNCiAgICANCiAgICBub2RlW2ZvbnRuYW1lPSJGYW5nc29uZyJdDQog
+ICAgZWRnZVtmb250bmFtZT0iRmFuZ3NvbmciXQ0KDQogICAgc3ViZ3JhcGggY2x1c3Rlcl8xIHsN
+CiAgICAgICAgbGFiZWw9cm93DQoNCiAgICAgICAgbjFbc2hhcGU9cmVjb3JkLCBsYWJlbD0ie3sm
+bmJzcDsmbmJzcDsmbmJzcDsgayAmbmJzcDsmbmJzcDsmbmJzcDsgfCAxfSB8IHtyb3cgdHJ4X2lk
+IHwgMTB9fSJdDQoNCiAgICAgICAgbjJbc2hhcGU9cmVjb3JkLCBsYWJlbD0ie3smbmJzcDsmbmJz
+cDsmbmJzcDsgayAmbmJzcDsmbmJzcDsmbmJzcDsmbmJzcDsgfCAxMH0gfCB7cm93IHRyeF9pZCB8
+IDE1fX0iXQ0KDQogICAgICAgIG4zW3NoYXBlPXJlY29yZCwgbGFiZWw9Int7Jm5ic3A7Jm5ic3A7
+Jm5ic3A7IGsgJm5ic3A7Jm5ic3A7Jm5ic3A7Jm5ic3A7IHwgMTF9IHwge3JvdyB0cnhfaWQgfCAx
+N319Il0NCg0KICAgICAgICBuNFtzaGFwZT1yZWNvcmQsIGxhYmVsPSJ7eyZuYnNwOyZuYnNwOyZu
+YnNwOyBrICZuYnNwOyZuYnNwOyZuYnNwOyZuYnNwOyB8IDIyfSB8IHtyb3cgdHJ4X2lkIHwgMjV9
+fSJdDQoNCiAgICAgICAgdjEsIHYyLCB2MywgdjQgW3N0eWxlPWRhc2hlZCwgZm9udGNvbG9yPXJl
+ZF0NCg0KICAgICAgICBuMS0+bjIgW2Rpcj1iYWNrLCBsYWJlbD1VMSwgY29sb3I9Ymx1ZSwgZm9u
+dGNvbG9yPWJsdWVdDQogICAgICAgIG4yLT5uMyBbZGlyPWJhY2ssIGxhYmVsPVUyLCBjb2xvcj1i
+bHVlLCBmb250Y29sb3I9Ymx1ZV0NCiAgICAgICAgbjMtPm40IFtkaXI9YmFjaywgbGFiZWw9VTMs
+IGNvbG9yPWJsdWUsIGZvbnRjb2xvcj1ibHVlXQ0KDQogICAgICAgIHYxLT5uMQ0KICAgICAgICB2
+Mi0+bjINCiAgICAgICAgdjMtPm4zDQogICAgICAgIHY0LT5uNA0KDQogICAgICAgIHtyYW5rPXNh
+bWUgdjEgdjIgdjMgdjR9DQogICAgICAgIHtyYW5rPXNhbWUgbjEgbjIgbjMgbjR9DQogICAgfQ0K
+DQogICAgbjUgW2xhYmVsPSJzZXQgaz0xMCBcbiB0cmFuc2FjdGlvbiBpZCA9IDE1Iiwgc3R5bGU9
+ZmlsbGVkLCBmaWxsY29sb3I9bGlnaHRjb3JhbF0NCiAgICBuNiBbbGFiZWw9InNldCBrPWsrMSBc
+biB0cmFuc2FjdGlvbiBpZCA9IDE3Iiwgc3R5bGU9ZmlsbGVkLCBmaWxsY29sb3I9bGlnaHRjb3Jh
+bF0NCiAgICBuNyBbbGFiZWw9InNldCBrPWsqMiBcbiB0cmFuc2FjdGlvbiBpZCA9IDI1Iiwgc3R5
+bGU9ZmlsbGVkLCBmaWxsY29sb3I9bGlnaHRjb3JhbF0NCg0KICAgIHtyYW5rPXNhbWUgbjUgbjYg
+bjd9DQoNCiAgICBuNS0+djINCiAgICBuNi0+djMNCiAgICBuNy0+djQNCn0=
+ -->
+<p>图中实线框是同一行数据的4个版本，当前最新版本是v4， k值是22，它是被<code>transaction id</code>为25的事务更新的，因此它的<code>row trx_id</code>也是25。图中三个蓝色箭头，就是前面说的回滚日志。而v1-v3这三个版本并不是物理上真实存在的，而是每次根据当前版本和回滚日志计算出来的。</p>
+<p>按照可重复读的定义，一个事务启动的时候，能够看到所有已经提交的事务结果，但是之后，这个事务执行期间，其他事务的更新对它不可见。因此，一个事务只需要在启动时声明说，“以我启动的时刻为准，如果一个数据版本是在我启动之前生成的，就认，如果是在我启动以后才生成的，我就不认，我必须要找到它的上一个可见版本”</p>
+<p>为了实现这个效果，InnoDB为每个事务构造了一个数组，用来保存事务启动瞬间，当前活跃事务(已经启动但尚未提交的所有事务)ID。数组里面最小事务ID记为低水位，最大事务ID加1记为高水位。这个视图数组和高水位，就组成了当前事务的一致性视图（read-view）。而数据版本的可见性规则，就是基于数据的<code>row trx_id</code>和这个一致性视图的对比结果得到的。这个活跃事务ID数组把所有的<code>row trx_id</code>分成了几种不同的情况：</p>
+<p><img src="/2019/10/13/Mysql事务隔离实例分析/index/visible.png" alt="数据版本可见性规则"><br>&lt;!— digraph G {<br>    fontname=”Fangsong”<br>    compound=true<br>    newrank=true<br>    label=”数据版本可见性规则\n\n”<br>    labelloc=t</p>
+<pre><code>node[fontname=&quot;Fangsong&quot;]
+edge[fontname=&quot;Fangsong&quot;]
+
+n1[shape=none, label=&lt;
+    &lt;table border=&quot;0&quot; cellborder=&quot;1&quot; cellspacing=&quot;0&quot;&gt;
+        &lt;tr&gt;
+            &lt;td bgcolor=&quot;green&quot;&gt;已提交事务&lt;/td&gt;
+            &lt;td port=&quot;p1&quot;&gt;&lt;/td&gt;
+            &lt;td port=&quot;p3&quot; bgcolor=&quot;yellow&quot;&gt;未提交事务集合&lt;/td&gt;
+            &lt;td port=&quot;p2&quot;&gt;&lt;/td&gt;
+            &lt;td bgcolor=&quot;red&quot;&gt;未开始事务&lt;/td&gt;
+        &lt;/tr&gt;
+    &lt;/table&gt;
+&gt;]
+
+低水位-&gt;n1:p1 [style=dashed]
+高水位-&gt;n1:p2 [style=dashed]
+
+当前事务-&gt;n1:p3 [minlen=2 style=dashed]
+</code></pre><p>} —&gt;</p>
+<p>这样，对于当前事务的启动瞬间来说，一个数据版本的<code>row trx_id</code>，存在以下几种情况：</p>
+<ul>
+<li>如果落在绿色部分，表示这个版本是已提交的事务或者是当前事务自己生成的，这个数据是可见的。</li>
+<li>如果落在红色部分，表示这个版本是由将来启动的事务生成的，这个数据不可见。</li>
+<li>如果落在黄色部分，又分两种情况：<ul>
+<li>如果<code>row trx_id</code>在数组中，表示这个版本是由还未提交的事务生成的，不可见。</li>
+<li>如果<code>row trx_id</code>不在数组中，表示这个版本是一件提交了的事务生成的，可见。</li>
+</ul>
+</li>
+</ul>
+<blockquote>
+<p>想一想： 这里对绿色部分的判断是否有必要？因为如果一个数据版本的<code>row trx_id</code>不在红色区和活跃事务ID数组中，那它就是可见的，否则是不可见的。</p>
+</blockquote>
+<p>InnoDB正是利用了“所有数据都有多个版本”这个特性，实现了秒级创建快照的能力。</p>
+<p>接下来我们继续看一下上面的事务A语句返回结果为什么是count=10。我们先做以下假设：</p>
+<ul>
+<li>事务A开始前，系统里只有一个活跃事务ID： 24</li>
+<li>事务A、B、C的事务ID分别是25、26、27，且当前系统只有这四个事务</li>
+<li>三个事务开始前，(1, 10) 这一行数据的<code>row trx_id</code> 是20</li>
+</ul>
+<p>跟事务A查询逻辑有关的操作如下图所示：</p>
+<p><img src="/2019/10/13/Mysql事务隔离实例分析/index/transaction_a.png" alt="事务A查询数据逻辑图"></p>
+<!-- 
+ZGlncmFwaCBHIHsNCiAgICBmb250bmFtZT0iRmFuZ3NvbmciDQogICAgY29tcG91bmQ9dHJ1ZQ0K
+ICAgIG5ld3Jhbms9dHJ1ZQ0KICAgIGxhYmVsPSLkuovliqFB5p+l6K+i5pWw5o2u6YC76L6R5Zu+
+XG5cbiINCiAgICBsYWJlbGxvYz10DQogICAgDQogICAgbm9kZVtmb250bmFtZT0iRmFuZ3Nvbmci
+XQ0KICAgIGVkZ2VbZm9udG5hbWU9IkZhbmdzb25nIl0NCg0KICAgIHN1YmdyYXBoIGNsdXN0ZXJB
+IHsNCiAgICAgICAgbGFiZWw9IuS6i+WKoUEiDQogICAgICAgIHN0eWxlPWRhc2hlZA0KICAgICAg
+ICBhMSBbc2hhcGU9cmVjb3JkLCBsYWJlbD0ie3t0cmFuc2FjdGlvbiBpZCB8ICZuYnNwOyZuYnNw
+OzI1Jm5ic3A7Jm5ic3A7Jm5ic3A7fSB8IHsg5rS76LeD5LqL5YqhSUQg5pWw57uEIHwgWzI0LCAy
+NV19fSJdDQoNCiAgICAgICAgYTIgW3NoYXBlPWJveCwgbGFiZWw9ImdldCBjb3VudCIsIHN0eWxl
+PWZpbGxlZCwgY29sb3I9ImN5YW4zIl0NCiAgICB9DQoNCiAgICBzdWJncmFwaCBjbHVzdGVyQiB7
+DQogICAgICAgIGxhYmVsPSLkuovliqFCIg0KICAgICAgICBzdHlsZT1kYXNoZWQNCiAgICAgICAg
+YjEgW3NoYXBlPXJlY29yZCwgbGFiZWw9Int7dHJhbnNhY3Rpb24gaWQgfCAmbmJzcDsmbmJzcDsm
+bmJzcDsmbmJzcDsmbmJzcDsyNSZuYnNwOyZuYnNwOyZuYnNwOyZuYnNwO30gfCB7IOa0u+i3g+S6
+i+WKoUlEIOaVsOe7hCB8IFsyNCwgMjUsIDI2XX19Il0NCg0KICAgICAgICBiMiBbc2hhcGU9Ym94
+LCBsYWJlbD0ic2V0IGNvdW50PWNvdW50KzEiLCBzdHlsZT1maWxsZWQsIGNvbG9yPSJjeWFuMyJd
+DQogICAgfQ0KDQogICAgc3ViZ3JhcGggY2x1c3RlckMgew0KICAgICAgICBsYWJlbD0i5LqL5Yqh
+QyINCiAgICAgICAgc3R5bGU9ZGFzaGVkDQogICAgICAgIGMxIFtzaGFwZT1yZWNvcmQsIGxhYmVs
+PSJ7e3RyYW5zYWN0aW9uIGlkIHwmbmJzcDsgJm5ic3A7Jm5ic3A7Jm5ic3A7Jm5ic3A7Jm5ic3A7
+MjUmbmJzcDsmbmJzcDsmbmJzcDsmbmJzcDsmbmJzcDsmbmJzcDt9IHwgeyDmtLvot4PkuovliqFJ
+RCDmlbDnu4QgfCBbMjQsIDI1LCAyNiwgMjddfX0iXQ0KDQogICAgICAgIGMyIFtzaGFwZT1ib3gs
+IGxhYmVsPSJzZXQgY291bnQ9Y291bnQrMSIsIHN0eWxlPWZpbGxlZCwgY29sb3I9ImN5YW4zIl0N
+CiAgICB9DQoNCiAgICBkYXRhMiBbc2hhcGU9bm9uZSwgbGFiZWw9PA0KICAgICAgICA8dGFibGUg
+Ym9yZGVyPSIwIiBjZWxsYm9yZGVyPSIxIiBjZWxsc3BhY2luZz0iMCI+DQogICAgICAgICAgICA8
+dHI+DQogICAgICAgICAgICAgICAgPHRkIGJnY29sb3I9Im1lZGl1bXNlYWdyZWVuIiBwb3J0PSJw
+MSI+MjA8L3RkPg0KICAgICAgICAgICAgICAgIDx0ZCByb3dzcGFuPSIyIiBiZ2NvbG9yPSJiZWln
+ZSIgcG9ydD0icDIiPuWOhuWPsjxici8+54mI5pysMjwvdGQ+DQogICAgICAgICAgICA8L3RyPg0K
+ICAgICAgICAgICAgPHRyPg0KICAgICAgICAgICAgICAgIDx0ZCBiZ2NvbG9yPSJjeWFuMyIgcG9y
+dD0icDMiPigxLCAxMCk8L3RkPg0KICAgICAgICAgICAgPC90cj4NCiAgICAgICAgPC90YWJsZT4N
+CiAgICA+XQ0KDQogICAgZGF0YTEgW3NoYXBlPW5vbmUsIGxhYmVsPTwNCiAgICAgICAgPHRhYmxl
+IGJvcmRlcj0iMCIgY2VsbGJvcmRlcj0iMSIgY2VsbHNwYWNpbmc9IjAiPg0KICAgICAgICAgICAg
+PHRyPg0KICAgICAgICAgICAgICAgIDx0ZCBiZ2NvbG9yPSJtZWRpdW1zZWFncmVlbiIgcG9ydD0i
+cDEiPjI3PC90ZD4NCiAgICAgICAgICAgICAgICA8dGQgcm93c3Bhbj0iMiIgYmdjb2xvcj0iYmVp
+Z2UiIHBvcnQ9InAyIj7ljoblj7I8YnIvPueJiOacrDE8L3RkPg0KICAgICAgICAgICAgPC90cj4N
+CiAgICAgICAgICAgIDx0cj4NCiAgICAgICAgICAgICAgICA8dGQgYmdjb2xvcj0iY3lhbjMiIHBv
+cnQ9InAzIj4oMSwgMTEpPC90ZD4NCiAgICAgICAgICAgIDwvdHI+DQogICAgICAgIDwvdGFibGU+
+DQogICAgPl0NCg0KICAgIGRhdGEwIFtzaGFwZT1ub25lLCBsYWJlbD08DQogICAgICAgIDx0YWJs
+ZSBib3JkZXI9IjAiIGNlbGxib3JkZXI9IjEiIGNlbGxzcGFjaW5nPSIwIj4NCiAgICAgICAgICAg
+IDx0cj4NCiAgICAgICAgICAgICAgICA8dGQgYmdjb2xvcj0ibWVkaXVtc2VhZ3JlZW4iIHBvcnQ9
+InAxIj4yNjwvdGQ+DQogICAgICAgICAgICAgICAgPHRkIHJvd3NwYW49IjIiIGJnY29sb3I9ImJl
+aWdlIiBwb3J0PSJwMiI+5b2T5YmNPGJyLz7niYjmnKw8L3RkPg0KICAgICAgICAgICAgPC90cj4N
+CiAgICAgICAgICAgIDx0cj4NCiAgICAgICAgICAgICAgICA8dGQgYmdjb2xvcj0iY3lhbjMiIHBv
+cnQ9InAzIj4oMSwgMTIpPC90ZD4NCiAgICAgICAgICAgIDwvdHI+DQogICAgICAgIDwvdGFibGU+
+DQogICAgPl0NCg0KICAgIHtyYW5rPXNhbWUgZGF0YTAgYjJ9DQogICAge3Jhbms9c2FtZSBkYXRh
+MSBjMn0NCiAgICBkYXRhMi0+ZGF0YTEtPmRhdGEwIFtkaXI9YmFjaywgd2VpZ2h0PTQsIGNvbG9y
+PWdyZWVuXQ0KDQogICAgdjFbc3R5bGU9aW52aXNdDQogICAgZGF0YTAtPnYxIFtzdHlsZT1pbnZp
+c10NCg0KICAgIHtyYW5rPXNhbWUgdjEgYTJ9DQogICAge3Jhbms9c2FtZSBhMSBiMSBjMX0NCg0K
+ICAgIGIyLT5kYXRhMCBbc3R5bGU9ZGFzaGVkLCBjb2xvcj0iY3lhbjMiXQ0KICAgIGMyLT5kYXRh
+MSBbc3R5bGU9ZGFzaGVkLCBjb2xvcj0iY3lhbjMiXQ0KICAgIGMxLT5jMiBbd2VpZ2h0PTQsIHN0
+eWxlPWludmlzXQ0KICAgIGIxLT5iMiBbd2VpZ2h0PTQsIHN0eWxlPWludmlzXQ0KfQ==
+ -->
+<p>从图中可以看出，第一个有效更新是事务C，把数据从(1, 10) 改成了 (1, 11)，这时候，数据的最新版本是27， 而24已经成为了历史版本。第二个有效更新是事务B，把数据从(1, 11) 改成了 (1, 12)。这时候，数据的最新版本是26， 而27又成为了历史版本。</p>
+<p>现在事务A来读数据了，它的活跃事务ID数组是[24, 25]，读数据流程是这样的：</p>
+<ul>
+<li>找到 (1, 12)的时候， 得到<code>row trx_id</code> 为 26，处于红色区域，不可见</li>
+<li>找上一个历史版本， 得到<code>row trx_id</code> 为27，同样处于红色区域，不可见</li>
+<li>再找上一个历史版本，得到<code>row trx_id</code> 为20， 处于绿色区域，可见</li>
+</ul>
+<p>因此，事务A读取到的数据是 (1, 10)。</p>
+<h4 id="当前读"><a href="#当前读" class="headerlink" title="当前读"></a>当前读</h4><p>看了上面的图，你是否有这样的疑问： 事务B的<code>set count=count+1</code>语句，如果按照一致性读，结果好像不对？这是因为更新数据都是先读后，而这个读，只能读当前的值，称为<code>当前读</code>。因此在事务B更新的时候，拿到的数据是 (1, 11)。除了update语句外，select语句如果加锁，也是当前读，因此如果将事务A的查询语句<code>select count from demo where id=1;</code> 改为 <code>select count from demo where id=1 lock in share mode</code> 或者 <code>select count from demo where id=1 for update</code>，它得到的值将是版本26的数据 (1, 12)。</p>
+<p>上面的例子都是基于可重复读隔离级别展开的，而读提交与可重复读的逻辑类似，它们最主要的区别是：</p>
+<ul>
+<li>在可重复读隔离级别下，只需要在事务开始的时候创建一致性视图，之后的事务里的其他查询都共用这个一致性视图。</li>
+<li>在读提交隔离级别下，每一个语句执行前都会重新算出一个新的视图。</li>
+</ul>
+<p>基于以上区别，请思考一下，上面事务A、B、C的例子中，如果是在读提交隔离级别下，事务A读取到的count值是多少？</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/mysql/" rel="tag"># mysql</a>
+              <a href="/tags/事务隔离/" rel="tag"># 事务隔离</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2015/09/02/谨慎使用部分PHP内置函数/index.html" rel="prev" title="谨慎使用部分PHP内置函数">
+      <i class="fa fa-chevron-left"></i> 谨慎使用部分PHP内置函数
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2019/10/16/使用plantuml设计C4模型软件架构图/index.html" rel="next" title="使用plantuml设计C4模型软件架构图">
+      使用plantuml设计C4模型软件架构图 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+  </div>
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-3"><a class="nav-link" href="#事务隔离级别"><span class="nav-number">1.</span> <span class="nav-text">事务隔离级别</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#实例分析"><span class="nav-number">2.</span> <span class="nav-text">实例分析</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#事务隔离的实现"><span class="nav-number">3.</span> <span class="nav-text">事务隔离的实现</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#当前读"><span class="nav-number">3.1.</span> <span class="nav-text">当前读</span></a></li></ol></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Tian Weilong"
+      src="https://avatars1.githubusercontent.com/u/3870357?v=3&s=460">
+  <p class="site-author-name" itemprop="name">Tian Weilong</p>
+  <div class="site-description" itemprop="description">LOVE wat u do. DO it GREAT.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">20</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/categories/">
+        <span class="site-state-item-count">4</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+        <span class="site-state-item-count">36</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2020</span>
+  <span class="with-love">
+    <i class="fa fa-user"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Tian Weilong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+<script src="/js/utils.js"></script><script src="/js/motion.js"></script>
+<script src="/js/schemes/muse.js"></script>
+<script src="/js/next-boot.js"></script><!-- hexo-inject:begin --><!-- hexo-inject:end -->
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

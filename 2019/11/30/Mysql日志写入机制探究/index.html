@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <!-- hexo-inject:begin --><!-- hexo-inject:end --><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 3.9.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/font-awesome.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"blog.tianwl.com","root":"/","scheme":"Muse","version":"7.7.2","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="在Mysql日志模块学习笔记一文中，我们已经了解到Mysql通过redo log 和 binlog是如何保证Mysql发生异常重启后数据不丢失以及误删数据后完整恢复的，但是对这两种日志的写入机制没有做过多的介绍，今天我们就一起来探讨一下这个问题。">
+<meta name="keywords" content="mysql,日志,binlog,redo log,写入机制">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Mysql日志写入机制探究">
+<meta property="og:url" content="http://blog.tianwl.com/2019/11/30/Mysql日志写入机制探究/index.html">
+<meta property="og:site_name" content="VINO">
+<meta property="og:description" content="在Mysql日志模块学习笔记一文中，我们已经了解到Mysql通过redo log 和 binlog是如何保证Mysql发生异常重启后数据不丢失以及误删数据后完整恢复的，但是对这两种日志的写入机制没有做过多的介绍，今天我们就一起来探讨一下这个问题。">
+<meta property="og:locale" content="zh-CN">
+<meta property="og:image" content="http://blog.tianwl.com/2019/11/30/Mysql日志写入机制探究/index/binlog.png">
+<meta property="og:updated_time" content="2020-03-28T13:55:03.326Z">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Mysql日志写入机制探究">
+<meta name="twitter:description" content="在Mysql日志模块学习笔记一文中，我们已经了解到Mysql通过redo log 和 binlog是如何保证Mysql发生异常重启后数据不丢失以及误删数据后完整恢复的，但是对这两种日志的写入机制没有做过多的介绍，今天我们就一起来探讨一下这个问题。">
+<meta name="twitter:image" content="http://blog.tianwl.com/2019/11/30/Mysql日志写入机制探究/index/binlog.png">
+
+<link rel="canonical" href="http://blog.tianwl.com/2019/11/30/Mysql日志写入机制探究/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>Mysql日志写入机制探究 | VINO</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript><!-- hexo-inject:begin --><!-- hexo-inject:end -->
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <!-- hexo-inject:begin --><!-- hexo-inject:end --><div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">VINO</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-fw fa-home"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-fw fa-archive"></i>归档</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post">
+            
+
+  <div class="posts-expand">
+      
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="http://blog.tianwl.com/2019/11/30/Mysql日志写入机制探究/index.html">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars1.githubusercontent.com/u/3870357?v=3&s=460">
+      <meta itemprop="name" content="Tian Weilong">
+      <meta itemprop="description" content="LOVE wat u do. DO it GREAT.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="VINO">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Mysql日志写入机制探究
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="fa fa-calendar-o"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2019-11-30 16:25:52" itemprop="dateCreated datePublished" datetime="2019-11-30T16:25:52+08:00">2019-11-30</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="fa fa-folder-o"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/数据库/" itemprop="url" rel="index"><span itemprop="name">数据库</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>在<a href="/2019/10/27/Mysql日志模块学习笔记/index.html" title="Mysql日志模块学习笔记">Mysql日志模块学习笔记</a>一文中，我们已经了解到Mysql通过<code>redo log</code> 和 <code>binlog</code>是如何保证Mysql发生异常重启后数据不丢失以及误删数据后完整恢复的，但是对这两种日志的写入机制没有做过多的介绍，今天我们就一起来探讨一下这个问题。</p>
+<a id="more"></a>
+<h3 id="binlog的写入机制"><a href="#binlog的写入机制" class="headerlink" title="binlog的写入机制"></a>binlog的写入机制</h3><p>首先来看一下<code>binlog</code>，它的写入逻辑还是比较简单的： 在事务执行的时候，它会先把日志写到<code>binlog cache</code>， 事务提交的时候，再把<code>binlog cache</code>写到<code>binlog</code>文件中，并清空对应的<code>binlog cache</code>。</p>
+<p>这其中有一个前提，无论事务有多大，同一个事务的<code>binlog</code>是不能被拆开的。参数<code>binlog_cache_size</code>表示单个线程内<code>binlog cache</code>所占用的内存大小，如果事务日志超过了这个大小，就要暂存到磁盘。</p>
+<p>整个写入的过程如下图所示：</p>
+<p><img src="/2019/11/30/Mysql日志写入机制探究/index/binlog.png" alt="binlog写入机制示意图"></p>
+<!-- 
+ZGlncmFwaCBHIHsNCiAgICBmb250bmFtZT0iRmFuZ3NvbmciDQogICAgY29tcG91bmQ9dHJ1ZQ0K
+ICAgIG5ld3Jhbms9dHJ1ZQ0KICAgIGxhYmVsPSJiaW5sb2cg5YaZ5YWl5py65Yi256S65oSP5Zu+
+XG5cbiINCiAgICBsYWJlbGxvYz10DQogICAgbm9kZXNlcD0xDQogICAgDQogICAgbm9kZVtmb250
+bmFtZT0iRmFuZ3NvbmciXQ0KICAgIGVkZ2VbZm9udG5hbWU9IkZhbmdzb25nIl0NCg0KICAgIHN1
+YmdyYXBoIGNsdXN0ZXIxIHsNCiAgICAgICAgbGFiZWwgPSAi5LqL5YqhQSjov5DooYzkuK0pIg0K
+ICAgICAgICBzdWJncmFwaCBjbHVzdGVyMTEgew0KICAgICAgICAgICAgbGFiZWwgPSAiYmlubG9n
+IGNhY2hlIg0KICAgICAgICAgICAgbjExW3NoYXBlPXJlY29yZCwgbGFiZWw9Insg5YaF5a2YIHwg
+5Li05pe25paH5Lu2fSJdDQogICAgICAgIH0NCiAgICB9DQoNCiAgICBzdWJncmFwaCBjbHVzdGVy
+MiB7DQogICAgICAgIGxhYmVsID0gIuS6i+WKoUIo6L+Q6KGM5LitKSINCiAgICAgICAgc3ViZ3Jh
+cGggY2x1c3RlcjIxIHsNCiAgICAgICAgICAgIGxhYmVsID0gImJpbmxvZyBjYWNoZSINCiAgICAg
+ICAgICAgIG4yMVtzaGFwZT1yZWNvcmQsIGxhYmVsPSJ7IOWGheWtmCB8IOS4tOaXtuaWh+S7tn0i
+XQ0KICAgICAgICB9DQogICAgfQ0KDQogICAgc3ViZ3JhcGggY2x1c3RlcjMgew0KICAgICAgICBs
+YWJlbCA9ICLkuovliqFDKOi/kOihjOS4rSkiDQogICAgICAgIHN1YmdyYXBoIGNsdXN0ZXIzMSB7
+DQogICAgICAgICAgICBsYWJlbCA9ICJiaW5sb2cgY2FjaGUiDQogICAgICAgICAgICBuMzFbc2hh
+cGU9cmVjb3JkLCBsYWJlbD0ieyDlhoXlrZggfCDkuLTml7bmlofku7Z9Il0NCiAgICAgICAgfQ0K
+ICAgIH0NCg0KICAgIHN1YmdyYXBoIGNsdXN0ZXI0IHsNCiAgICAgICAgbGFiZWwgPSAi5LqL5Yqh
+QSjmj5DkuqQpIg0KICAgICAgICBzdWJncmFwaCBjbHVzdGVyNDEgew0KICAgICAgICAgICAgbGFi
+ZWwgPSAiYmlubG9nIGNhY2hlIg0KICAgICAgICAgICAgbjQxW3NoYXBlPXJlY29yZCwgbGFiZWw9
+InsgIHwgJm5ic3A7Jm5ic3A7Jm5ic3A7Jm5ic3A7Jm5ic3A7Jm5ic3A7Jm5ic3A7Jm5ic3A7fSJd
+DQogICAgICAgIH0NCiAgICB9DQoNCiAgICBzdWJncmFwaCBjbHVzdGVyNSB7DQogICAgICAgIGxh
+YmVsID0gIuS6i+WKoUIo5o+Q5LqkKSINCiAgICAgICAgc3ViZ3JhcGggY2x1c3RlcjUxIHsNCiAg
+ICAgICAgICAgIGxhYmVsID0gImJpbmxvZyBjYWNoZSINCiAgICAgICAgICAgIG41MVtzaGFwZT1y
+ZWNvcmQsIGxhYmVsPSJ7ICB8Jm5ic3A7Jm5ic3A7Jm5ic3A7Jm5ic3A7Jm5ic3A7Jm5ic3A7Jm5i
+c3A7Jm5ic3A7IH0iXQ0KICAgICAgICB9DQogICAgfQ0KDQogICAgc3ViZ3JhcGggY2x1c3RlcjYg
+ew0KICAgICAgICBsYWJlbCA9ICLkuovliqFDKOaPkOS6pCkiDQogICAgICAgIHN1YmdyYXBoIGNs
+dXN0ZXI2MSB7DQogICAgICAgICAgICBsYWJlbCA9ICJiaW5sb2cgY2FjaGUiDQogICAgICAgICAg
+ICBuNjFbc2hhcGU9cmVjb3JkLCBsYWJlbD0ieyAgfCAmbmJzcDsmbmJzcDsmbmJzcDsmbmJzcDsm
+bmJzcDsmbmJzcDsmbmJzcDsmbmJzcDsgfSJdDQogICAgICAgIH0NCiAgICB9IA0KICAgIHtyYW5r
+PXNhbWUgbjExIG4yMSBuMzF9DQogICAge3Jhbms9c2FtZSBuNDEgbjUxIG42MX0NCiAgICBuMTEt
+Pm40MVtsaGVhZD1jbHVzdGVyNCwgbHRhaWw9Y2x1c3RlcjEsIG1pbmxlbj0yXQ0KICAgIG4yMS0+
+bjUxW2xoZWFkPWNsdXN0ZXI1LCBsdGFpbD1jbHVzdGVyMiwgbWlubGVuPTNdDQogICAgbjMxLT5u
+NjFbbGhlYWQ9Y2x1c3RlcjYsIGx0YWlsPWNsdXN0ZXIzLCBtaW5sZW49Ml0NCg0KICAgIG4yW3No
+YXBlPWJveCwgd2lkdGg9NiwgbGFiZWw9ImJpbmxvZ+aWh+S7tihQYWdlIENhY2hlKSJdDQogICAg
+bjQxLT5uMlt3ZWlnaHQ9MiwgbHRhaWw9Y2x1c3RlcjQsIGxhYmVsPSJ3cml0ZSIsIGZvbnRjb2xv
+cj1ibHVlXQ0KICAgIG41MS0+bjJbd2VpZ2h0PTIsIGx0YWlsPWNsdXN0ZXI1LCBtaW5sZW49Miwg
+bGFiZWw9IndyaXRlIiwgZm9udGNvbG9yPWJsdWVdDQogICAgbjYxLT5uMlt3ZWlnaHQ9MiwgbHRh
+aWw9Y2x1c3RlcjYsIGxhYmVsPSJ3cml0ZSIsIGZvbnRjb2xvcj1ibHVlXQ0KDQogICAgbjNbc2hh
+cGU9Ym94LCB3aWR0aD02LCBsYWJlbD0i56Gs55uYIl0NCg0KICAgIG4yLT5uM1tsYWJlbD0iZnN5
+bmMiLCBmb250Y29sb3I9Ymx1ZV0NCg0KfQ==
+ -->
+<p> 需要说明的是，图中的<code>write</code>是指将日志写入到文件系统的Page Cache，没有把数据持久化到磁盘，因此速度比较快。图中的<code>fsync</code>才是将数据持久化到磁盘的操作。</p>
+<p> <code>write</code>和<code>fsync</code>的时机，是由参数<code>sync_binlog</code>控制的：</p>
+<ul>
+<li>该参数为0时，表示每次提交事务都只<code>write</code>而不<code>fsync</code></li>
+<li>该参数为N(N为正整数)时，表示每次提交事务都<code>write</code>，但累积N个事务后才<code>fsync</code></li>
+</ul>
+<p>当出现IO瓶颈的时候，将<code>sync_binlog</code>设置为一个比较大的值，可以提升性能，但是如果主机发生异常重启，会丢失最近N个事务的binlog日志。</p>
+<h3 id="redo-log写入机制"><a href="#redo-log写入机制" class="headerlink" title="redo log写入机制"></a>redo log写入机制</h3><p>和<code>binlog</code>的写入类似，<code>redo log</code>可能存在三种状态：</p>
+<ul>
+<li>存在<code>redo log buffer</code>中，也就是Mysql进程的内存中</li>
+<li>写到磁盘(<code>write</code>)，但是没有持久化(<code>fsync</code>)，也就是在文件系统的Page Cache中</li>
+<li>持久化到磁盘中</li>
+</ul>
+<p>前面两种状态写入速度都很快，但是第三种状态会慢很多。</p>
+<p><code>redo log</code>的写入策略，由参数<code>innodb_flush_log_at_trx_commit</code>控制：</p>
+<ul>
+<li>该参数为0时，表示每次事务提交时都只是把<code>redo log</code>留在<code>redo log buffer</code>中</li>
+<li>该参数为1时，表示每次事务提交都将<code>redo log</code>直接持久化到磁盘</li>
+<li>该参数为2时，表示每次事务提交时都只是把<code>redo log</code>写到Page Cache</li>
+</ul>
+<p>InnoDB有一个后台线程，每隔一秒就会把<code>redo log buffer</code>中的日志，调用<code>write</code>写到文件系统的Page Cache，然后调用<code>fsync</code>持久化到磁盘。</p>
+<p>由于事务执行中间过程的<code>redo log</code>也是直接写在<code>redo log buffer</code>中的，这些<code>redo log</code>也会被后台线程一起持久化到磁盘，除了这个后台线程每秒轮询的机制外，还有两种常见会让一个没有提交的事务的<code>redo log</code>写入到磁盘中：</p>
+<ul>
+<li><code>redo log buffer</code>占用的空间即将达到<code>innodb_log_buffer_size</code>一半的时候，后台线程会主动写盘</li>
+<li>并行事务提交的时候，顺带将这个事务的<code>redo log buffer</code>持久化到磁盘</li>
+</ul>
+<p>在<a href="/2019/10/27/Mysql日志模块学习笔记/index.html" title="Mysql日志模块学习笔记">Mysql日志模块学习笔记</a>中介绍两阶段提交的时候说过，时序上<code>redo log</code>先prepare，再写binlog，最后再把redo log commit。</p>
+<p>如果把<code>innodb_flush_log_at_trx_commit</code>设置成1，那么<code>redo log</code>在prepare阶段就要持久化一次，因为有一个崩溃恢复逻辑是要依赖于prepare的<code>redo log</code>，再加上binlog来恢复的。</p>
+<p>每秒一次的后台轮询刷盘，再加上崩溃恢复这个逻辑，InnoDB就认为<code>redo log</code>在commit的时候就不需要<code>fsync</code>了，只会<code>write</code>到文件系统的Page Cache中就够了。</p>
+<p>当<code>sync_binlog</code>和<code>innodb_flush_log_at_trx_commit</code>都设置为1的时候，一个事务在完整提交前，需要等待两次刷盘，一次是<code>redo log</code>， 一次是<code>binlog</code>。这就意味着，如果Mysql的TPS是1万的话，每秒就会写2万次磁盘，这显然会严重影响性能，要解释这个问题，就要用到组提交（group commit）机制了。</p>
+<p>首先说一下日志逻辑序列号（log sequence number，LSN）的概念。LSN是单调递增的，用来对应<code>redo log</code>的一个个写入点。每次写入长度为<code>length</code>的<code>redo log</code>, LSN的值就会加上<code>length</code>。</p>
+<p>假设有三个并发事务A、B、C在prepare阶段，都写完<code>redo log</code>，持久化到磁盘的过程，对应的LSN分别为130、 200、 350，这时候Mysql会选择其中一个事务作为这组的leader，并且将所有小于等于350的redo log，一次性持久化到磁盘，这时候另外两个事务就可以直接返回了。因此一次组提交里面，组员越多，节约磁盘IOPS的效果越好。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/mysql/" rel="tag"># mysql</a>
+              <a href="/tags/日志/" rel="tag"># 日志</a>
+              <a href="/tags/binlog/" rel="tag"># binlog</a>
+              <a href="/tags/redo-log/" rel="tag"># redo log</a>
+              <a href="/tags/写入机制/" rel="tag"># 写入机制</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2019/11/28/Mysql加锁规则及实例分析/index.html" rel="prev" title="Mysql加锁规则及实例分析">
+      <i class="fa fa-chevron-left"></i> Mysql加锁规则及实例分析
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2019/12/04/join语句-你用对了吗？/index.html" rel="next" title="join语句,你用对了吗？">
+      join语句,你用对了吗？ <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+  </div>
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-3"><a class="nav-link" href="#binlog的写入机制"><span class="nav-number">1.</span> <span class="nav-text">binlog的写入机制</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#redo-log写入机制"><span class="nav-number">2.</span> <span class="nav-text">redo log写入机制</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Tian Weilong"
+      src="https://avatars1.githubusercontent.com/u/3870357?v=3&s=460">
+  <p class="site-author-name" itemprop="name">Tian Weilong</p>
+  <div class="site-description" itemprop="description">LOVE wat u do. DO it GREAT.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">20</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/categories/">
+        <span class="site-state-item-count">4</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+        <span class="site-state-item-count">36</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2020</span>
+  <span class="with-love">
+    <i class="fa fa-user"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Tian Weilong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+<script src="/js/utils.js"></script><script src="/js/motion.js"></script>
+<script src="/js/schemes/muse.js"></script>
+<script src="/js/next-boot.js"></script><!-- hexo-inject:begin --><!-- hexo-inject:end -->
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

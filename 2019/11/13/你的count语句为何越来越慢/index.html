@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <!-- hexo-inject:begin --><!-- hexo-inject:end --><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 3.9.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/font-awesome.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"blog.tianwl.com","root":"/","scheme":"Muse","version":"7.7.2","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="我们平时在做业务开发的时候，几乎都会遇到一个这样的场景：统计某个表所有记录的行数。而一般我们都会使用select count(*) from some_table来实现，但是不知道你有没有碰到过这样的情况：随着表中的记录越来越多，这个统计语句执行得也越来越慢。这到底是为什么呢？今天我们就来聊聊这个问题。">
+<meta name="keywords" content="mysql,count,统计行数">
+<meta property="og:type" content="article">
+<meta property="og:title" content="你的count语句为何越来越慢">
+<meta property="og:url" content="http://blog.tianwl.com/2019/11/13/你的count语句为何越来越慢/index.html">
+<meta property="og:site_name" content="VINO">
+<meta property="og:description" content="我们平时在做业务开发的时候，几乎都会遇到一个这样的场景：统计某个表所有记录的行数。而一般我们都会使用select count(*) from some_table来实现，但是不知道你有没有碰到过这样的情况：随着表中的记录越来越多，这个统计语句执行得也越来越慢。这到底是为什么呢？今天我们就来聊聊这个问题。">
+<meta property="og:locale" content="zh-CN">
+<meta property="og:updated_time" content="2020-03-28T13:55:03.326Z">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="你的count语句为何越来越慢">
+<meta name="twitter:description" content="我们平时在做业务开发的时候，几乎都会遇到一个这样的场景：统计某个表所有记录的行数。而一般我们都会使用select count(*) from some_table来实现，但是不知道你有没有碰到过这样的情况：随着表中的记录越来越多，这个统计语句执行得也越来越慢。这到底是为什么呢？今天我们就来聊聊这个问题。">
+
+<link rel="canonical" href="http://blog.tianwl.com/2019/11/13/你的count语句为何越来越慢/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>你的count语句为何越来越慢 | VINO</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript><!-- hexo-inject:begin --><!-- hexo-inject:end -->
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <!-- hexo-inject:begin --><!-- hexo-inject:end --><div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">VINO</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-fw fa-home"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-fw fa-archive"></i>归档</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post">
+            
+
+  <div class="posts-expand">
+      
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="http://blog.tianwl.com/2019/11/13/你的count语句为何越来越慢/index.html">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars1.githubusercontent.com/u/3870357?v=3&s=460">
+      <meta itemprop="name" content="Tian Weilong">
+      <meta itemprop="description" content="LOVE wat u do. DO it GREAT.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="VINO">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          你的count语句为何越来越慢
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="fa fa-calendar-o"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2019-11-13 23:18:53" itemprop="dateCreated datePublished" datetime="2019-11-13T23:18:53+08:00">2019-11-13</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="fa fa-folder-o"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/数据库/" itemprop="url" rel="index"><span itemprop="name">数据库</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>我们平时在做业务开发的时候，几乎都会遇到一个这样的场景：统计某个表所有记录的行数。而一般我们都会使用<code>select count(*) from some_table</code>来实现，但是不知道你有没有碰到过这样的情况：随着表中的记录越来越多，这个统计语句执行得也越来越慢。这到底是为什么呢？今天我们就来聊聊这个问题。</p>
+<a id="more"></a>
+<h3 id="count-的实现方式"><a href="#count-的实现方式" class="headerlink" title="count(*)的实现方式"></a>count(*)的实现方式</h3><p>不同的Mysql引擎，对<code>count(*)</code>有不同的实现方式：</p>
+<ul>
+<li>MyISAM 引擎把一个表的总行数存在了磁盘上，在执行count(*)的时候会直接返回这个行数，效率很高，当然如果加了where条件，它也无法直接读取这个计数，返回也不会有这么快。</li>
+<li>InnoDB没有像MyISAM一样把总行数存在磁盘上，它执行count(*)的时候需要把数据一行一行地读出来，然后累积计数。</li>
+</ul>
+<p>为什么InnoDB不和MyISAM一样把总行数存起来呢？看完下面的例子相信你就能明白了。</p>
+<p>假设表<code>user</code>中有3000条记录，有三个并行进行的会话：</p>
+<ul>
+<li>会话A先启动事务并查询一次表的总行数</li>
+<li>会话B启动事务，插入一行记录后，查询表的总行数</li>
+<li>会话C先启动一个单独的语句，插入一行记录后，查询表的总行数</li>
+</ul>
+<p>执行顺序如下表所示（从上到下按时间先后顺序执行，假设同一行的语句是同时执行的）。</p>
+<div class="table-container">
+<table>
+<thead>
+<tr>
+<th style="text-align:left">会话A</th>
+<th style="text-align:left">会话B</th>
+<th style="text-align:left">会话C</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">begin;</td>
+<td style="text-align:left"></td>
+<td style="text-align:left"></td>
+</tr>
+<tr>
+<td style="text-align:left">select count(*) from user;</td>
+<td style="text-align:left"></td>
+<td style="text-align:left"></td>
+</tr>
+<tr>
+<td style="text-align:left"></td>
+<td style="text-align:left"></td>
+<td style="text-align:left">insert into user (id, name) values (3001, ‘zhangsan’);</td>
+</tr>
+<tr>
+<td style="text-align:left"></td>
+<td style="text-align:left">begin;</td>
+<td style="text-align:left"></td>
+</tr>
+<tr>
+<td style="text-align:left"></td>
+<td style="text-align:left">insert into user (id, name) values (3002, ‘lisi’);</td>
+<td style="text-align:left"></td>
+</tr>
+<tr>
+<td style="text-align:left">select count(*) from user; (返回3000)</td>
+<td style="text-align:left">select count(*) from user; (返回3002)</td>
+<td style="text-align:left">select count(*) from user; (返回3001)</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>可以看出，在最后一行，三个会话同时查询<code>user</code>表的总行数，拿到的结果却不一样，这和InnoDB的事务设计有关系，在<a href="/2019/10/13/Mysql事务隔离实例分析/index.html" title="Mysql事务隔离实例分析">Mysql事务隔离实例分析</a>一文中曾经提到一个MVCC的概念，在某个会话执行count(*)时，每一行记录都要判断自己是否对这个会话可见，因此InnoDB只好把数据一行一行地读出依次判断，而不能够将总行数存放到某个地方。</p>
+<p>当然，即使是一行一行地读取，InnoDB也还是对<code>count(*)</code>做了一些优化。在<a href="/2019/10/28/Mysql索引学习笔记/index.html" title="Mysql索引学习笔记">Mysql索引学习笔记</a>一文中有提到，InnoDB主键索引树的叶子节点是数据，而普通索引树的叶子节点是主键值。因此普通索引树要比主键索引树小得多，对于<code>count(*)</code>这样的操作，遍历哪个索引树逻辑上得到的结果都是一致的。因此，Mysql的优化器会找到最小的那棵树来遍历。</p>
+<p>如果你用过<code>show table status</code>命令的话，就会发现输出结果里有一个<code>TABLE_ROWS</code>用于显示这个表当前有多少行。但是它是一个采样估算值，如果你看过 <a href="/2019/11/04/如何避免Mysql优化器选错索引/index.html" title="如何避免Mysql优化器选错索引">如何避免Mysql优化器选错索引</a>，那你对采样这个概念一定不陌生。官方文档说这个命令和实际值的误差最高可能达到40%到50%。</p>
+<h3 id="不同的count用法"><a href="#不同的count用法" class="headerlink" title="不同的count用法"></a>不同的count用法</h3><p>除了<code>count(*)</code>以外，有的人可能还用过 <code>count(主键)</code>、 <code>count(字段)</code>、<code>count(1)</code>等方法。那么他们在性能上有哪些差别呢？</p>
+<p>首先，<code>count()</code>是一个聚合函数，对于返回的结果集，一行一行地判断，如果count函数的参数不是<code>NULL</code>，累计值就加1，否则不加，最后返回累计值。由于<code>countr(*)</code>、<code>count(主键)</code>、<code>count(1)</code>这三种用法的参数不可能为<code>NULL</code>，而<code>count(字段)</code>的参数有可能为<code>NULL</code>，在计算的时候还需要做额外的判断。</p>
+<p>对<code>count(主键)</code>来说，InnoDB会遍历整张表，把每一行的主键都取出来返回给server层，server层判断主键是不可能为空的，就按行累加。</p>
+<p>对<code>count(1)</code>来说，InnoDB遍历整张表但不取值，server层对于返回的每一行，放一个数字<code>1</code>进去，判断也是不可能为空的，按行累加。</p>
+<p>对<code>count(字段)</code>来说，如果这个字段定义为<code>not null</code>的话，一行行地读出这个字段，判断不能为null，按行累加。如果这个字段定义允许为null，那么执行的时候，判断到字段值有可能是null，还要把值取出来再判断一下，不是null才累加。</p>
+<p>而对于<code>count(*)</code>， InnoDB做了专门的优化，它也不会取值，因为<code>count(*)</code>肯定不是null，直接按行累加。</p>
+<p>所以结论就是，按照效率来说， <code>count(字段)</code> &lt; <code>count(主键)</code> &lt; <code>count(1)</code> ≈ <code>count(*)</code>，因此我们平时要统计行数的时候，尽量使用<code>count(*)</code>。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/mysql/" rel="tag"># mysql</a>
+              <a href="/tags/count/" rel="tag"># count</a>
+              <a href="/tags/统计行数/" rel="tag"># 统计行数</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2019/11/12/如何正确地清理Mysql表空间/index.html" rel="prev" title="如何正确地清理Mysql表空间">
+      <i class="fa fa-chevron-left"></i> 如何正确地清理Mysql表空间
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2019/11/16/浅析order-by工作原理/index.html" rel="next" title="浅析order by工作原理">
+      浅析order by工作原理 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+  </div>
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-3"><a class="nav-link" href="#count-的实现方式"><span class="nav-number">1.</span> <span class="nav-text">count(*)的实现方式</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#不同的count用法"><span class="nav-number">2.</span> <span class="nav-text">不同的count用法</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Tian Weilong"
+      src="https://avatars1.githubusercontent.com/u/3870357?v=3&s=460">
+  <p class="site-author-name" itemprop="name">Tian Weilong</p>
+  <div class="site-description" itemprop="description">LOVE wat u do. DO it GREAT.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">20</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/categories/">
+        <span class="site-state-item-count">4</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+        <span class="site-state-item-count">36</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2020</span>
+  <span class="with-love">
+    <i class="fa fa-user"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Tian Weilong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+<script src="/js/utils.js"></script><script src="/js/motion.js"></script>
+<script src="/js/schemes/muse.js"></script>
+<script src="/js/next-boot.js"></script><!-- hexo-inject:begin --><!-- hexo-inject:end -->
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

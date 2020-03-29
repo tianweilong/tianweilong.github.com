@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <!-- hexo-inject:begin --><!-- hexo-inject:end --><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 3.9.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/font-awesome.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"blog.tianwl.com","root":"/","scheme":"Muse","version":"7.7.2","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="有过慢SQL处理经验的同学可能会发现这样一个现象： 使用了联表查询的语句在慢SQL中占有比较大的比重。甚至部分公司的DBA直接不让使用join语句。这到底是为什么呢？你平时是怎么使用join语句的？">
+<meta name="keywords" content="mysql,join,join_buffer">
+<meta property="og:type" content="article">
+<meta property="og:title" content="join语句,你用对了吗？">
+<meta property="og:url" content="http://blog.tianwl.com/2019/12/04/join语句-你用对了吗？/index.html">
+<meta property="og:site_name" content="VINO">
+<meta property="og:description" content="有过慢SQL处理经验的同学可能会发现这样一个现象： 使用了联表查询的语句在慢SQL中占有比较大的比重。甚至部分公司的DBA直接不让使用join语句。这到底是为什么呢？你平时是怎么使用join语句的？">
+<meta property="og:locale" content="zh-CN">
+<meta property="og:image" content="http://blog.tianwl.com/2019/12/04/join语句-你用对了吗？/index/explain1.png">
+<meta property="og:image" content="http://blog.tianwl.com/2019/12/04/join语句-你用对了吗？/index/explain2.png">
+<meta property="og:updated_time" content="2020-03-28T13:55:03.330Z">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="join语句,你用对了吗？">
+<meta name="twitter:description" content="有过慢SQL处理经验的同学可能会发现这样一个现象： 使用了联表查询的语句在慢SQL中占有比较大的比重。甚至部分公司的DBA直接不让使用join语句。这到底是为什么呢？你平时是怎么使用join语句的？">
+<meta name="twitter:image" content="http://blog.tianwl.com/2019/12/04/join语句-你用对了吗？/index/explain1.png">
+
+<link rel="canonical" href="http://blog.tianwl.com/2019/12/04/join语句-你用对了吗？/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>join语句,你用对了吗？ | VINO</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript><!-- hexo-inject:begin --><!-- hexo-inject:end -->
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <!-- hexo-inject:begin --><!-- hexo-inject:end --><div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">VINO</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-fw fa-home"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-fw fa-archive"></i>归档</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post">
+            
+
+  <div class="posts-expand">
+      
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="http://blog.tianwl.com/2019/12/04/join语句-你用对了吗？/index.html">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars1.githubusercontent.com/u/3870357?v=3&s=460">
+      <meta itemprop="name" content="Tian Weilong">
+      <meta itemprop="description" content="LOVE wat u do. DO it GREAT.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="VINO">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          join语句,你用对了吗？
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="fa fa-calendar-o"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2019-12-04 20:49:04" itemprop="dateCreated datePublished" datetime="2019-12-04T20:49:04+08:00">2019-12-04</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="fa fa-folder-o"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/数据库/" itemprop="url" rel="index"><span itemprop="name">数据库</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>有过慢SQL处理经验的同学可能会发现这样一个现象： 使用了联表查询的语句在慢SQL中占有比较大的比重。甚至部分公司的DBA直接不让使用join语句。这到底是为什么呢？你平时是怎么使用join语句的？</p>
+<a id="more"></a>
+<p>我们先来看看join语句的执行流程，使用如下语句初始化表<code>demo1</code> 和 <code>demo2</code>：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><span class="line">create table `demo1` (</span><br><span class="line">    `id` int not null,</span><br><span class="line">    `k` int not null,</span><br><span class="line">    `b` int not null,</span><br><span class="line">    primary key (`id`),</span><br><span class="line">    key `k` (`k`)</span><br><span class="line">) engine=InnoDB;</span><br><span class="line"></span><br><span class="line">drop procedure seed_demo;</span><br><span class="line">delimiter ;;</span><br><span class="line">create procedure seed_demo()</span><br><span class="line">begin</span><br><span class="line">  declare i int;</span><br><span class="line">  set i=1;</span><br><span class="line">  while (i&lt;=5000) do</span><br><span class="line">    insert into demo1 values (i, i, i);</span><br><span class="line">    set i=i+1;</span><br><span class="line">  end while;</span><br><span class="line">end;;</span><br><span class="line">delimiter ;</span><br><span class="line">call seed_demo();</span><br><span class="line"></span><br><span class="line">create table `demo2` like `demo1`;</span><br><span class="line">insert into `demo2` (select * from `demo1` where id &lt;=200 );</span><br></pre></td></tr></table></figure>
+<p>这两个表都有主键索引id和一个索引k，字段b上无索引。同时借助存储过程往这两个表分别插入了5000和200行数据。</p>
+<h3 id="Index-Nested-Loop-Join"><a href="#Index-Nested-Loop-Join" class="headerlink" title="Index Nested-Loop Join"></a>Index Nested-Loop Join</h3><p>先看一下这个语句：<br><figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">select * from demo2 straight_join demo1 on (demo2.k = demo1.k);</span><br></pre></td></tr></table></figure></p>
+<p>语句中使用<code>straight_join</code>的目的是让优化器选用<code>demo2</code>为驱动表，<code>demo1</code>为被驱动表。这个语句的explain结果如下：<br><img src="/2019/12/04/join语句-你用对了吗？/index/explain1.png" alt="explain语句结果"></p>
+<p>可以看到，在这个语句中，使用到了<code>demo1</code>表上的索引<code>k</code>，它的执行流程如下：</p>
+<ul>
+<li>从表<code>demo2</code>中取一行数据，记为<code>row</code></li>
+<li>从<code>row</code>中取出字段<code>k</code>到表<code>demo1</code>中查找</li>
+<li>取出表<code>demo1</code>中满足条件的行，跟<code>row</code>组成一行，作为结果集的一部分</li>
+<li>重复上面的步骤，直到表<code>demo2</code>中200条数据全部读取完毕</li>
+</ul>
+<p>这个过程和我们写代码时的嵌套查询有点类似，并且可以使用到被驱动表的索引，所以称这个过程为<code>Index Nested-Loop Join</code>， 简称<code>NLJ</code>。</p>
+<p>在这个流程里，由于对驱动表<code>demo2</code>进行了全表扫描，扫描行数为200。而对于每一行的<code>row</code>，都要根据<code>k</code>字段去<code>demo1</code>中进行树搜索，每次扫描过程都只扫描了一行，这个循环过程扫描行数也是200行。因此这个流程的总扫描行数为400行。</p>
+<p>我们再来推导一个一般的规律：假设被驱动表<code>demo1</code>的行数是N，驱动表<code>demo2</code>的行数是M。则每次在被驱动表查一行数据，要先搜索索引<code>k</code>，再回表搜索主键索引。因此在被驱动表上查一行的时间复杂度是$2\times\log_2N$，而驱动表的行数是M，对于这M行，需要去被驱动表匹配M次，我们得出整个执行过程，复杂度近似为：$M+M\times 2\times \log_2N$。显然M对复杂度的影响更大，因此<strong>在使用join时，应该让小表做驱动表</strong>。当然这个结论有一个前提，就是<code>可以使用被驱动表的索引</code>。</p>
+<h3 id="Simple-Nested-Loop-Join"><a href="#Simple-Nested-Loop-Join" class="headerlink" title="Simple Nested-Loop Join"></a>Simple Nested-Loop Join</h3><p>我们再来看一下被驱动表用不上索引的情况。把之前的SQL稍微调整一下：<br><figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">select * from demo2 straight_join demo1 on (demo2.k = demo1.b);</span><br></pre></td></tr></table></figure></p>
+<p>由于被驱动表<code>demo1</code>上没有索引，到它上面查找时需要做全表扫描。因此这个语句要扫描<code>demo1</code>多达200次，总共扫描200 * 5000 = 100万行。 这个算法叫做<code>Simple Nested-Loop Join</code>。不难发现，如果<code>demo1</code>和<code>demo2</code>的数据都是10万行的话，这个语句就要扫描100亿行，这样的算法太笨重了。</p>
+<h3 id="Block-Nested-Loop-Join"><a href="#Block-Nested-Loop-Join" class="headerlink" title="Block Nested-Loop Join"></a>Block Nested-Loop Join</h3><p>当然Mysql也没有使用上面的算法，而是使用了另外一个叫做<code>Block Nested-Loop Join</code>的算法，简称<code>BNL</code>。</p>
+<p>这时候，由于被驱动表上没有可用的索引，算法的流程如下：</p>
+<ul>
+<li>把表<code>demo2</code>的数据读入<code>join_buffer</code>中</li>
+<li>扫描表<code>demo1</code>，把它的每一行取出来，跟<code>join_buffer</code>中的数据对比，满足join条件的，作为结果集的一部分返回。</li>
+</ul>
+<p>这条SQL的explain结果如下：<br><img src="/2019/12/04/join语句-你用对了吗？/index/explain2.png" alt="explain语句结果"><br>在这个过程中，对两个表都做了一次全表扫描，总扫描行数为5200行，<code>join_buffer</code>中有200条数据，由于它们都是无序的，因此对表<code>demo1</code>中的每一行，都要做200次判断，总共需要在内存中做判断的次数是 200 * 50000 = 100万次。由于这100万次都是在内存中操作， 它比<code>Simple Nested-Loop Join</code>算法要快很多。</p>
+<p>再推导一个一般规律： 假设被驱动表<code>demo1</code>的行数是N， 驱动表<code>demo2</code>的行数是M。则总扫描行数是<code>M+N</code>，内存中的判断次数是<code>M*N</code>。可以看出这两个算式和M、N的相对大小没有关系，选择哪个表做驱动表都可以。</p>
+<p>上面这个结论有一个前提：<code>join_buffer</code>能一次装下<code>demo2</code>中的所有数据。对于装不下的情况，mysql会如何处理呢？其实策略也很简单，就是分段装。</p>
+<p>整个执行过程如下：</p>
+<ul>
+<li>扫描表<code>demo2</code>，顺序读取数据行放入<code>join_buffer</code>中，假设放完第120行的时候，<code>join_buffer</code>满了，继续第2步。</li>
+<li>扫描表<code>demo1</code>，把<code>demo1</code>中的每一行取出来，跟<code>join_buffer</code>中的数据做对比，满足<code>join</code>条件的，作为结果集的一部分返回。</li>
+<li>清空<code>join_buffer</code></li>
+<li>继续扫描表<code>demo2</code>，把剩下的80行数据读入<code>join_buffer</code>中，再执行第2步…</li>
+</ul>
+<p>这个过程正体现了算法名字中<code>Block</code>的由来，即<code>分块</code>join。在这个过程中，在内存中需要做判断的次数依然是(120+80) * 5000 = 100万次。</p>
+<p>再推导一个一般规律： 假设被驱动表<code>demo1</code>的行数是N， 驱动表<code>demo2</code>的行数是M，需要分K段才能完成这个流程，由于<code>join_buffer</code>的大小是一个固定值，因此M越大，K也越大，我们把K表示为$\lambda \times M$。可以得出扫描行数是$M+K\times N$也就是 $M+\lambda \times M \times N$，内存判断的次数是$M \times N$次。显然M越小，扫描行数会越少，<strong>应该让小表做驱动表</strong>。</p>
+<p>当然，对于上面的扫描行数，K是一个关键的因素， K越小，扫描行数越少， 而当N固定时，能影响K大小的是参数<code>join_buffer_size</code>， 这个值越大， K越小，这也是为什么当join语句很慢时，把<code>join_buffer_size</code>调大通常能让它变快。</p>
+<p>前面反复提到应该让小表做驱动表，这里有一个误区，就是并不是这个表的数据量少就是小表，而是带上筛选条件以后，从这个表查出的数据量小才算小表。例如：<br><figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">select * from demo2 straight_join demo1 on (demo2.b = demo1.b) where demo1.id &lt;= 20;</span><br><span class="line">select * from demo1 straight_join demo2 on (demo2.b = demo1.b) where demo1.id &lt;= 20;</span><br></pre></td></tr></table></figure></p>
+<p>第二个语句，<code>join_buffer</code>只需要放入<code>demo1</code>的前20行，而第一个语句需要放入<code>demo2</code>的所有数据（200行），显然第二个语句是更好的。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/mysql/" rel="tag"># mysql</a>
+              <a href="/tags/join/" rel="tag"># join</a>
+              <a href="/tags/join-buffer/" rel="tag"># join_buffer</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2019/11/30/Mysql日志写入机制探究/index.html" rel="prev" title="Mysql日志写入机制探究">
+      <i class="fa fa-chevron-left"></i> Mysql日志写入机制探究
+    </a></div>
+      <div class="post-nav-item"></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+  </div>
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-3"><a class="nav-link" href="#Index-Nested-Loop-Join"><span class="nav-number">1.</span> <span class="nav-text">Index Nested-Loop Join</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Simple-Nested-Loop-Join"><span class="nav-number">2.</span> <span class="nav-text">Simple Nested-Loop Join</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Block-Nested-Loop-Join"><span class="nav-number">3.</span> <span class="nav-text">Block Nested-Loop Join</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Tian Weilong"
+      src="https://avatars1.githubusercontent.com/u/3870357?v=3&s=460">
+  <p class="site-author-name" itemprop="name">Tian Weilong</p>
+  <div class="site-description" itemprop="description">LOVE wat u do. DO it GREAT.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">20</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/categories/">
+        <span class="site-state-item-count">4</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+        <span class="site-state-item-count">36</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2020</span>
+  <span class="with-love">
+    <i class="fa fa-user"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Tian Weilong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+<script src="/js/utils.js"></script><script src="/js/motion.js"></script>
+<script src="/js/schemes/muse.js"></script>
+<script src="/js/next-boot.js"></script><!-- hexo-inject:begin --><!-- hexo-inject:end -->
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <!-- hexo-inject:begin --><!-- hexo-inject:end --><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 3.9.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/font-awesome.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"blog.tianwl.com","root":"/","scheme":"Muse","version":"7.7.2","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="我们平时开发的过程中少不了需要和数据库打交道，而误删/误改数据的事情也偶有发生，这时候我们需要做的就是尽快找数据库管理员帮忙恢复数据。但是你知道Mysql可以“恢复数据”的能力是怎么实现的吗？">
+<meta name="keywords" content="mysql,日志,binlog,redolog">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Mysql日志模块学习笔记">
+<meta property="og:url" content="http://blog.tianwl.com/2019/10/27/Mysql日志模块学习笔记/index.html">
+<meta property="og:site_name" content="VINO">
+<meta property="og:description" content="我们平时开发的过程中少不了需要和数据库打交道，而误删/误改数据的事情也偶有发生，这时候我们需要做的就是尽快找数据库管理员帮忙恢复数据。但是你知道Mysql可以“恢复数据”的能力是怎么实现的吗？">
+<meta property="og:locale" content="zh-CN">
+<meta property="og:image" content="http://blog.tianwl.com/2019/10/27/Mysql日志模块学习笔记/index/redolog.png">
+<meta property="og:image" content="http://blog.tianwl.com/2019/10/27/Mysql日志模块学习笔记/index/update-process.png">
+<meta property="og:updated_time" content="2020-03-28T13:55:03.322Z">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Mysql日志模块学习笔记">
+<meta name="twitter:description" content="我们平时开发的过程中少不了需要和数据库打交道，而误删/误改数据的事情也偶有发生，这时候我们需要做的就是尽快找数据库管理员帮忙恢复数据。但是你知道Mysql可以“恢复数据”的能力是怎么实现的吗？">
+<meta name="twitter:image" content="http://blog.tianwl.com/2019/10/27/Mysql日志模块学习笔记/index/redolog.png">
+
+<link rel="canonical" href="http://blog.tianwl.com/2019/10/27/Mysql日志模块学习笔记/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>Mysql日志模块学习笔记 | VINO</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript><!-- hexo-inject:begin --><!-- hexo-inject:end -->
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <!-- hexo-inject:begin --><!-- hexo-inject:end --><div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">VINO</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-fw fa-home"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-fw fa-archive"></i>归档</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post">
+            
+
+  <div class="posts-expand">
+      
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="http://blog.tianwl.com/2019/10/27/Mysql日志模块学习笔记/index.html">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars1.githubusercontent.com/u/3870357?v=3&s=460">
+      <meta itemprop="name" content="Tian Weilong">
+      <meta itemprop="description" content="LOVE wat u do. DO it GREAT.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="VINO">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Mysql日志模块学习笔记
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="fa fa-calendar-o"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2019-10-27 10:41:03" itemprop="dateCreated datePublished" datetime="2019-10-27T10:41:03+08:00">2019-10-27</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="fa fa-folder-o"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/数据库/" itemprop="url" rel="index"><span itemprop="name">数据库</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>我们平时开发的过程中少不了需要和数据库打交道，而误删/误改数据的事情也偶有发生，这时候我们需要做的就是尽快找数据库管理员帮忙恢复数据。但是你知道Mysql可以“恢复数据”的能力是怎么实现的吗？</p>
+<a id="more"></a>
+<h3 id="从日志模块说起"><a href="#从日志模块说起" class="headerlink" title="从日志模块说起"></a>从日志模块说起</h3><h4 id="redo-log"><a href="#redo-log" class="headerlink" title="redo log"></a>redo log</h4><p>当我们执行更新语句的时候，会涉及到Mysql两个重要的日志模块。 <code>redo log</code>（重做日志） 和 <code>binlog</code>（归档日志）。当有一条记录需要更新时，InnoDB引擎会先把记录写到<code>redo log</code> 里，并更新内存，这个时候更新就算完成了。同时，InnoDB引擎会在适当的时候（比如系统比较空闲的时候），将这个操作记录更新到磁盘里面。</p>
+<blockquote>
+<p>想一想： 既然写<code>redo log</code>和在合适的时机更新记录都是需要写磁盘，为什么不直接把记录更新到磁盘里？</p>
+</blockquote>
+<p><code>redo log</code>的大小是固定的，它是由一组大小相同的文件组成（如下图）。可以通过<code>show global variables like &#39;%innodb_log_file_size%&#39;;</code> 查看文件大小，通过<code>show global variables like &#39;%innodb_log_files_in_group%&#39;;</code> 查看文件数量。</p>
+<p><img src="/2019/10/27/Mysql日志模块学习笔记/index/redolog.png" alt="redolog"></p>
+<!-- digraph G {
+
+    n [shape="record", label=" <f0> ib_logfile0 |  <f1> ib_logfile1 | <f2> ib_logfile2 | <f3> ib_logfile3 "]
+
+    n:f3 -> n:f0 [headport=w, tailport=e]
+
+    write[label="write pos", fontcolor=blue, shape=plaintext] 
+    check[label="check point", fontcolor=red, shape=plaintext]
+
+    n:f1->write[dir=back, color=blue]
+
+    n:f2->check[dir=back, color=red]
+} -->
+<p>上图中配置了一组4个文件，写<code>redo log</code>的时候，是从第一个文件(ib_logfile0)开始写，写到末尾又回到第一个文件开始循环写。 <code>write pos</code>是当前记录写入的位置，一边写一边往右移。 <code>check point</code>是已将记录写入数据文件的位置，也是一边写一边往右移。它们之间空着的部分代表可以用来写新的<code>redo log</code>。如果<code>write pos</code>追上了<code>check point</code>， 也就是是它们之间已经没有空余的部分用来写<code>redo log</code>了，那么mysql就会停下来把一些记录写到数据文件，把<code>check point</code>往右推进，以空出一些部分用来写新的<code>redo log</code>。</p>
+<p>有了<code>redo log</code>，InnoDB就可以保证即使数据库发生异常重启，之前提交的记录都不会丢失，这个能力叫做<code>crash-safe</code>。</p>
+<h4 id="binlog"><a href="#binlog" class="headerlink" title="binlog"></a>binlog</h4><p>不知道你有没有注意到，这个<code>redo log</code>是InnoDB特有的， 那么其他引擎如MyISAM是没有这个<code>crash-safe</code>的能力的。当然mysql服务层也有自己的日志，也就是下面要说的<code>binlog</code>。</p>
+<p>这两种日志有以下不同：</p>
+<ul>
+<li><code>redo log</code>是InnoDB引擎特有的，<code>binlog</code>是mysql服务层实现的，所有引擎都可以使用。</li>
+<li><code>redo log</code>是物理日志，记录的是“在某个数据页上做了什么修改”，<code>binlog</code>是逻辑日志，记录的是这个语句的原始逻辑，比如“给id=10这一行的字段count加1”。</li>
+<li><code>redo log</code>是循环写的，空间固定会用完， <code>binlog</code>是追加写的，文件写到一定大小以后会切换到下一个，并且不会覆盖以前的日志。</li>
+</ul>
+<p>下面我们再来看一下一条更新语句<code>update table order set count = count + 1 where id = 10</code>执行的内部流程，如下图：<br><img src="/2019/10/27/Mysql日志模块学习笔记/index/update-process.png" alt="更新流程"></p>
+<!-- digraph G {
+    node[fontname="Fangsong"]
+    edge[fontname="Fangsong"]
+
+    fetch[label="取id=10这一行"]
+    judge[label="数据页在内存中?", shape=diamond]
+    disk[label="磁盘中\n读入内存"]
+    return[label="返回行数据"]
+    add[label="将这一行的count值加1"]
+    write[label="调引擎接口\n写入新行"]
+    memory[label="引擎将新行\n更新到内存"]
+    prepare[label="写入redo log\n 处于prepare阶段"]
+    binlog[label="写binlog"]
+    commit[label="提交事务\n处于commit状态"]
+
+    fetch->judge
+    judge->disk [label="否"]
+    judge->return [label="是", weight=2]
+    disk->return
+    return->add->write->memory->prepare->binlog->commit
+
+    {rank=same judge disk}
+} -->
+<p>最后三步将<code>redo log</code>的写入拆成了两个步骤<code>prepare</code> 和 <code>commit</code>，这就是所谓“两阶段提交”。</p>
+<h4 id="两阶段提交"><a href="#两阶段提交" class="headerlink" title="两阶段提交"></a>两阶段提交</h4><p>这个“两阶段提交”是为了让两份日志之间的逻辑保持一致。由于<code>redo log</code> 和 <code>binlog</code>是两个独立的逻辑，如果不用两阶段提交，只能是先写完<code>redo log</code> 再写 <code>binlog</code> 或者反过来。我们还是用前面更新语句的例子看一下这两种方式会有什么问题。假设在更新的过程中，写完第一个日志后，第二个日志还没有写完期间发生了系统崩溃：</p>
+<ul>
+<li><p>先写<code>redo log</code>再写<code>binlog</code><br>前面提到了<code>redo log</code>有<code>crash-safe</code>的能力，即使系统崩溃，它仍然可以把数据恢复回来，所以恢复以后这一行的count的值是加了1的。但是崩溃的时候<code>binlog</code>还没有写完，如果要用这个<code>binlog</code>恢复临时库，由于这个语句的<code>binlog</code>丢失，这个临时库就少了这一次更新，恢复出来的这一行的count的值是没有加1操作的，这就会导致临时库的值与原库的值不同。</p>
+</li>
+<li><p>先写<code>binlog</code>再写<code>redo log</code><br>如果在<code>binlog</code>写完之后崩溃，由于<code>redo log</code>还没写，崩溃恢复以后这个事务无效，所以这一行的count值是没有加1的。但是用<code>binlog</code>去恢复临时库的时候，是记录了这个加1操作的，同样会导致临时库与原库的值不同。</p>
+</li>
+</ul>
+<blockquote>
+<p>想一想： 如果是在写入<code>binlog</code>之后，但是在提交事务之前系统发生了崩溃，是否也会造成数据不一致？</p>
+</blockquote>
+<p>看到这里，你应该已经知道如何使用备份+<code>binlog</code>去恢复误删/误改数据了吧？</p>
+<h4 id="查看日志"><a href="#查看日志" class="headerlink" title="查看日志"></a>查看日志</h4><p>由于mysql默认没有开启<code>binlog</code>，要查看<code>binlog</code>， 需要在mysql配置文件中加上如下配置以开启<code>binlog</code>：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">log-bin=mysql-bin  //binlog 文件名</span><br><span class="line">server-id=24   //mysql server-id</span><br></pre></td></tr></table></figure>
+<p>需要特别注意，如果没有<code>server-id</code> 这一行配置， mysql启动的时候会报错。修改完成以后，可以通过<code>show variables like &#39;log_bin&#39;;</code>来查看是否已经开启。开启完成以后，尝试执行一条插入语句<code>insert into demo(name) values (&quot;tom&quot;);</code>（demo表仅有主键id和name两个字段）。 再使用<code>mysqlbinlog --base64-output=decode-rows -v mysql-bin.000001</code> 可以看到如下输出：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line">BEGIN</span><br><span class="line">/*!*/;</span><br><span class="line"># at 291</span><br><span class="line">#191027 13:08:17 server id 24  end_log_pos 341 CRC32 0x9c90a33d         Table_map: `demo`.`demo` mapped to number 108</span><br><span class="line"># at 341</span><br><span class="line">#191027 13:08:17 server id 24  end_log_pos 385 CRC32 0x31dcfc7b         Write_rows: table id 108 flags: STMT_END_F</span><br><span class="line">### INSERT INTO `demo`.`demo`</span><br><span class="line">### SET</span><br><span class="line">###   @1=32</span><br><span class="line">###   @2=&apos;tom&apos;</span><br><span class="line"># at 385</span><br><span class="line">#191027 13:08:17 server id 24  end_log_pos 416 CRC32 0xd1b65111         Xid = 16</span><br><span class="line">COMMIT/*!*/;</span><br></pre></td></tr></table></figure>
+<p>可以看到，刚才的插入操作已经记录到了<code>binlog</code>中，set 后面记录了完整的字段值。 接着再执行一个更新语句 <code>update demo set name = &#39;green&#39; where id = 32</code>。 可以得到如下日志：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line">BEGIN</span><br><span class="line">/*!*/;</span><br><span class="line"># at 553</span><br><span class="line">#191027 13:21:35 server id 24  end_log_pos 603 CRC32 0x4d94e3b5         Table_map: `demo`.`demo` mapped to number 108</span><br><span class="line"># at 603</span><br><span class="line">#191027 13:21:35 server id 24  end_log_pos 659 CRC32 0x12087264         Update_rows: table id 108 flags: STMT_END_F</span><br><span class="line">### UPDATE `demo`.`demo`</span><br><span class="line">### WHERE</span><br><span class="line">###   @1=32</span><br><span class="line">###   @2=&apos;tom&apos;</span><br><span class="line">### SET</span><br><span class="line">###   @1=32</span><br><span class="line">###   @2=&apos;green&apos;</span><br><span class="line"># at 659</span><br><span class="line">#191027 13:21:35 server id 24  end_log_pos 690 CRC32 0xd725af54         Xid = 26</span><br><span class="line">COMMIT/*!*/;</span><br></pre></td></tr></table></figure>
+<p>注意where条件中写下了这条记录的所有字段和对应的值。上面的输出是<code>binlog_format=row</code>时的<code>binlog</code>。我们修改一下 <code>binlog_format=statement</code>继续看一下语句 <code>insert into demo (name) values (&#39;tim&#39;)</code>的日志：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line">BEGIN</span><br><span class="line">/*!*/;</span><br><span class="line"># at 298</span><br><span class="line"># at 330</span><br><span class="line">#191027 13:27:41 server id 24  end_log_pos 330 CRC32 0x99e7d258         Intvar</span><br><span class="line">SET INSERT_ID=33/*!*/;</span><br><span class="line">#191027 13:27:41 server id 24  end_log_pos 442 CRC32 0x72a6b2d9         Query   thread_id=2     exec_time=0     error_code=0</span><br><span class="line">use `demo`/*!*/;</span><br><span class="line">SET TIMESTAMP=1572182861/*!*/;</span><br><span class="line">insert into demo (name) values (&apos;tim&apos;)</span><br><span class="line">/*!*/;</span><br><span class="line"># at 442</span><br><span class="line">#191027 13:27:41 server id 24  end_log_pos 473 CRC32 0xdda1c0a6         Xid = 10</span><br><span class="line">COMMIT/*!*/;</span><br></pre></td></tr></table></figure>
+<p>可以看到这个日志记录了原始的sql语句， 表的自增id通过前一句 <code>SET INSERT_ID=33</code>设置。 接着再执行一个更新语句 <code>update demo set name = &#39;green&#39; where id = 33</code>。 可以得到如下日志：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">BEGIN</span><br><span class="line">/*!*/;</span><br><span class="line"># at 617</span><br><span class="line">#191027 13:41:12 server id 24  end_log_pos 735 CRC32 0xf976e36a         Query   thread_id=3     exec_time=0     error_code=0</span><br><span class="line">SET TIMESTAMP=1572183672/*!*/;</span><br><span class="line">update demo set name = &apos;green&apos; where id = 33</span><br><span class="line">/*!*/;</span><br><span class="line"># at 735</span><br><span class="line">#191027 13:41:12 server id 24  end_log_pos 766 CRC32 0x8befe9c2         Xid = 19</span><br><span class="line">COMMIT/*!*/;</span><br></pre></td></tr></table></figure>
+<p>到这里，你大概已经了解<code>row</code>和<code>statement</code>这两种格式记录的区别了吧，你也可以自己动手再看看其他语句之间的区别。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/mysql/" rel="tag"># mysql</a>
+              <a href="/tags/日志/" rel="tag"># 日志</a>
+              <a href="/tags/binlog/" rel="tag"># binlog</a>
+              <a href="/tags/redolog/" rel="tag"># redolog</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2019/10/25/Graphviz学习笔记/index.html" rel="prev" title="Graphviz学习笔记">
+      <i class="fa fa-chevron-left"></i> Graphviz学习笔记
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2019/10/28/Mysql索引学习笔记/index.html" rel="next" title="Mysql索引学习笔记">
+      Mysql索引学习笔记 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+  </div>
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-3"><a class="nav-link" href="#从日志模块说起"><span class="nav-number">1.</span> <span class="nav-text">从日志模块说起</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#redo-log"><span class="nav-number">1.1.</span> <span class="nav-text">redo log</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#binlog"><span class="nav-number">1.2.</span> <span class="nav-text">binlog</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#两阶段提交"><span class="nav-number">1.3.</span> <span class="nav-text">两阶段提交</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#查看日志"><span class="nav-number">1.4.</span> <span class="nav-text">查看日志</span></a></li></ol></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Tian Weilong"
+      src="https://avatars1.githubusercontent.com/u/3870357?v=3&s=460">
+  <p class="site-author-name" itemprop="name">Tian Weilong</p>
+  <div class="site-description" itemprop="description">LOVE wat u do. DO it GREAT.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">20</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/categories/">
+        <span class="site-state-item-count">4</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+        <span class="site-state-item-count">36</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2020</span>
+  <span class="with-love">
+    <i class="fa fa-user"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Tian Weilong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+<script src="/js/utils.js"></script><script src="/js/motion.js"></script>
+<script src="/js/schemes/muse.js"></script>
+<script src="/js/next-boot.js"></script><!-- hexo-inject:begin --><!-- hexo-inject:end -->
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

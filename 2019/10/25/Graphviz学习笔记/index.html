@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <!-- hexo-inject:begin --><!-- hexo-inject:end --><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 3.9.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/font-awesome.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"blog.tianwl.com","root":"/","scheme":"Muse","version":"7.7.2","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="最近工作中经常要使用plantuml画架构图、对象关系图、时序图等， 发现plantuml的自动布局也有一些不足之处：比如无法精确设置关系（边）的出口点和入口点，节点较多时，节点的对齐方式也不太好处理。由于plantuml底层采用的graphviz，因此就花点时间研究一下graphviz的用法，看看到底是graphviz本身支持就不好，还是plantuml屏蔽了它的某些能力。">
+<meta name="keywords" content="graphviz,画图工具,dot">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Graphviz学习笔记">
+<meta property="og:url" content="http://blog.tianwl.com/2019/10/25/Graphviz学习笔记/index.html">
+<meta property="og:site_name" content="VINO">
+<meta property="og:description" content="最近工作中经常要使用plantuml画架构图、对象关系图、时序图等， 发现plantuml的自动布局也有一些不足之处：比如无法精确设置关系（边）的出口点和入口点，节点较多时，节点的对齐方式也不太好处理。由于plantuml底层采用的graphviz，因此就花点时间研究一下graphviz的用法，看看到底是graphviz本身支持就不好，还是plantuml屏蔽了它的某些能力。">
+<meta property="og:locale" content="zh-CN">
+<meta property="og:image" content="http://blog.tianwl.com/2019/10/25/Graphviz学习笔记/index/dot.png">
+<meta property="og:image" content="http://blog.tianwl.com/2019/10/25/Graphviz学习笔记/index/neato.png">
+<meta property="og:image" content="http://blog.tianwl.com/2019/10/25/Graphviz学习笔记/index/fdp.png">
+<meta property="og:image" content="http://blog.tianwl.com/2019/10/25/Graphviz学习笔记/index/sfdp.png">
+<meta property="og:image" content="http://blog.tianwl.com/2019/10/25/Graphviz学习笔记/index/twopi.png">
+<meta property="og:image" content="http://blog.tianwl.com/2019/10/25/Graphviz学习笔记/index/circo.png">
+<meta property="og:image" content="http://blog.tianwl.com/2019/10/25/Graphviz学习笔记/index/patchwork.png">
+<meta property="og:image" content="http://blog.tianwl.com/2019/10/25/Graphviz学习笔记/index/osage.png">
+<meta property="og:image" content="http://blog.tianwl.com/2019/10/25/Graphviz学习笔记/index/label-demo.png">
+<meta property="og:updated_time" content="2020-03-28T13:55:03.318Z">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Graphviz学习笔记">
+<meta name="twitter:description" content="最近工作中经常要使用plantuml画架构图、对象关系图、时序图等， 发现plantuml的自动布局也有一些不足之处：比如无法精确设置关系（边）的出口点和入口点，节点较多时，节点的对齐方式也不太好处理。由于plantuml底层采用的graphviz，因此就花点时间研究一下graphviz的用法，看看到底是graphviz本身支持就不好，还是plantuml屏蔽了它的某些能力。">
+<meta name="twitter:image" content="http://blog.tianwl.com/2019/10/25/Graphviz学习笔记/index/dot.png">
+
+<link rel="canonical" href="http://blog.tianwl.com/2019/10/25/Graphviz学习笔记/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>Graphviz学习笔记 | VINO</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript><!-- hexo-inject:begin --><!-- hexo-inject:end -->
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <!-- hexo-inject:begin --><!-- hexo-inject:end --><div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">VINO</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-fw fa-home"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-fw fa-archive"></i>归档</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post">
+            
+
+  <div class="posts-expand">
+      
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="http://blog.tianwl.com/2019/10/25/Graphviz学习笔记/index.html">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars1.githubusercontent.com/u/3870357?v=3&s=460">
+      <meta itemprop="name" content="Tian Weilong">
+      <meta itemprop="description" content="LOVE wat u do. DO it GREAT.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="VINO">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Graphviz学习笔记
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="fa fa-calendar-o"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2019-10-25 22:14:43" itemprop="dateCreated datePublished" datetime="2019-10-25T22:14:43+08:00">2019-10-25</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="fa fa-folder-o"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/工具/" itemprop="url" rel="index"><span itemprop="name">工具</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>最近工作中经常要使用plantuml画架构图、对象关系图、时序图等， 发现plantuml的自动布局也有一些不足之处：比如无法精确设置关系（边）的出口点和入口点，节点较多时，节点的对齐方式也不太好处理。由于plantuml底层采用的graphviz，因此就花点时间研究一下graphviz的用法，看看到底是graphviz本身支持就不好，还是plantuml屏蔽了它的某些能力。</p>
+<a id="more"></a>
+<h3 id="graphviz简介"><a href="#graphviz简介" class="headerlink" title="graphviz简介"></a>graphviz简介</h3><p>graphviz是一款开源的图形可视化软件（graph visualization software），它由一种被称为dot语言的图形描述语言与一组可以生成和处理dot文件的工具组成。</p>
+<h3 id="dot语言语法"><a href="#dot语言语法" class="headerlink" title="dot语言语法"></a>dot语言语法</h3><figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">[strict] (graph|digraph) name &#123; statement-list &#125;</span><br></pre></td></tr></table></figure>
+<p>以上是一个顶级图的定义方式。如果使用了strict关键字，指明一个图是”严格的”，那么将禁止在同一对节点之间定义多条边。如果使用digraph关键字，表明这是一个有向图，连线符必须为<code>-&gt;</code>；如果使用graph关键字，表明这是一个无向图，连线符必须为<code>--</code>。</p>
+<p>其中<code>statement-list</code>可以有以下几种形式：</p>
+<ul>
+<li><p>name=val<br>设置默认的图的样式属性。如<code>rankdir=LR</code> 表示使用从左到右的布局。</p>
+</li>
+<li><p>node[name=val]<br>设置默认的节点的样式属性。如<code>node[shape=box]</code> 表示设置节点形状为盒子。</p>
+</li>
+<li><p>edge[name=val]<br>设置默认的边的样式属性。如<code>edge[stype=bold]</code> 表示设置边为加粗。</p>
+</li>
+<li><p>n0 [name0=val0, name1=val1, …]<br>创建一个名为<code>n0</code>的节点，并且设置节点的属性。</p>
+</li>
+<li><p>n0 edgeop n1 edgeop n2 … edgeop nn [name0=val0, name1=val1, …]<br>在n0,n1,…nn节点之间创建边（连线），并且设置边的属性，如果节点不存在则会自动创建。</p>
+</li>
+<li><p>[subgraph name] { statement-list }<br>创建子图。</p>
+</li>
+</ul>
+<h3 id="相关命令"><a href="#相关命令" class="headerlink" title="相关命令"></a>相关命令</h3><p>安装好graphviz以后，可以通过不同的命令生成不同布局的图形。命令格式通常为 <code>cmd demo.dot -T png -o cmd.png</code> (其中<code>cmd</code> 需用实际的命令替代，如使用<code>dot</code>命令时，实际命令是<code>dot demo.dot -T png -o dot.png</code>),下面我们分别使用不同的命令对如下图形描述生成图片：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">digraph G &#123;</span><br><span class="line">    root=c</span><br><span class="line">    a -&gt; b -&gt; c -&gt; d -&gt; a</span><br><span class="line">    c -&gt; e -&gt; a</span><br><span class="line">    b -&gt; f -&gt; d</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h4 id="dot"><a href="#dot" class="headerlink" title="dot"></a>dot</h4><p>生成有向图的“分层”或分层图。布局算法将边缘对准同一方向（从上到下或从左到右），然后尝试避免边缘交叉并减少边缘长度。</p>
+<p>生成图片如下：<br><img src="/2019/10/25/Graphviz学习笔记/index/dot.png" alt="dot.png"></p>
+<h4 id="neato"><a href="#neato" class="headerlink" title="neato"></a>neato</h4><p>这是一种“弹簧模型”的布局，当图中的点的数目不是很大时（大约100个节点），将该布局会作为默认布局。它使用一种最小化全局能量函数，相当于统计多维缩放。这个命令的输出看起来有点挤成一堆的感觉。</p>
+<p>生成图片如下：<br><img src="/2019/10/25/Graphviz学习笔记/index/neato.png" alt="neato.png"></p>
+<h4 id="fdp"><a href="#fdp" class="headerlink" title="fdp"></a>fdp</h4><p>这是一种类似于neato的布局，是通过减少力而不是使用能量来实现的。Fdp实现了Fruchterman-Reingold启发式方法，其中包括一个多网格求解器，该求解器可以处理较大的图和群集的无向图。</p>
+<p>生成图片如下：<br><img src="/2019/10/25/Graphviz学习笔记/index/fdp.png" alt="fdp.png"></p>
+<h4 id="sfdp"><a href="#sfdp" class="headerlink" title="sfdp"></a>sfdp</h4><p>用于大图形布局的fdp的多尺度版本。</p>
+<p>生成图片如下：<br><img src="/2019/10/25/Graphviz学习笔记/index/sfdp.png" alt="sfdp.png"></p>
+<p>从图中可以看出，sfdp比fdp生成的图片更“稀疏”</p>
+<h4 id="twopi"><a href="#twopi" class="headerlink" title="twopi"></a>twopi</h4><p>径向布局，节点根据它们与给定根节点的距离放置在同心圆上。其中根节点可以自行设置。</p>
+<p>生成图片如下：<br><img src="/2019/10/25/Graphviz学习笔记/index/twopi.png" alt="twopi.png"></p>
+<p>由于设置了<code>root=c</code>，生成的图片是以节点c为圆心的径向同心圆，可以看出，e、b、d处在同一个以c为圆心的圆上。a和f也处在同一个以c为圆心的圆上。</p>
+<h4 id="circo"><a href="#circo" class="headerlink" title="circo"></a>circo</h4><p>圆形布局，适用于绘制某些多个循环结构的图，比如电信网络。</p>
+<p>生成图片如下：<br><img src="/2019/10/25/Graphviz学习笔记/index/circo.png" alt="circo.png"></p>
+<p>可以看出，六个节点处在同一个圆上。</p>
+<h4 id="patchwork"><a href="#patchwork" class="headerlink" title="patchwork"></a>patchwork</h4><p>将图形绘制为“方形树”。</p>
+<p>生成图片如下：<br><img src="/2019/10/25/Graphviz学习笔记/index/patchwork.png" alt="patchwork.png"></p>
+<p>可以用cluster来区分不同的树，这个统一的示例没有用到cluster，不能很好地展现“方形树”的概念，后面重点研究patchwork时再补充相关的示例。</p>
+<h4 id="osage"><a href="#osage" class="headerlink" title="osage"></a>osage</h4><p>基于cluster结构制图。对于给定的cluster，它的所有子元素都包含在它的内部，这些子元素（cluster、node等）会根据cluster的相关属性在该cluster内自动布局。</p>
+<p>生成图片如下：<br><img src="/2019/10/25/Graphviz学习笔记/index/osage.png" alt="osage"></p>
+<p>和<code>patchwork</code>类似， <code>osage</code>也要用cluster才能更好地展示，后面再补充带cluster的示例。</p>
+<h3 id="相关属性"><a href="#相关属性" class="headerlink" title="相关属性"></a>相关属性</h3><h4 id="通用属性"><a href="#通用属性" class="headerlink" title="通用属性"></a>通用属性</h4><ul>
+<li><p><code>href=url</code>:  超链接，当点击设置了该属性的元素时，会跳转到对应的url（仅对部分输出格式有效，如svg）。和属性<code>URL=url</code>作用相同。</p>
+</li>
+<li><p><code>fontcolor=colorvalue</code>: 设置标签(label)文本颜色。值的格式有以下几种： </p>
+<ul>
+<li><p><code>色相,饱和度,亮度</code>: 每个值都是介于0和1之间的浮点数。如<code>a[fontcolor=&quot;0.5,0.5,0.5&quot;]</code></p>
+</li>
+<li><p><code>X11颜色</code>：我们平常用的 <code>white</code>, <code>red</code>, <code>blue</code>, <code>green</code>等就是这一类。如<code>a[fontcolor=&quot;red&quot;]</code></p>
+</li>
+<li><p><code>rgb颜色</code>： 需转化为<code>#RRGGBB</code>的格式。 如<code>a[fontcolor=&quot;#000000&quot;]</code></p>
+</li>
+</ul>
+</li>
+<li><p><code>fontsize=n</code>: 设置标签文本字体大小。</p>
+</li>
+<li><code>fontname=name</code>: 设置字体名称。如果出现中文乱码，可能需要设置字体名称为支持中文的字体。</li>
+<li><p><code>label=text</code>: 设置标签文本。文本中可以使用<code>\n</code>, <code>\l</code>, <code>\r</code>换行，并且它们能分别使该行居中、居左、居右对齐。在标签中使用<code>\G</code>能取到当前的图名称。使用<code>\N</code>能取到当前的节点名称。<code>\T</code>能取到一条边的尾节点名称。<code>\H</code>能取到一条边的尾节点名称。 <code>\E</code>能取到一条边的名称（头节点名称—尾节点名称）。文本中也可以使用类HTML代码。如果一个节点有一个<code>shape=record</code> 的属性，文本可以包含一个以 <code>|</code> 分割的递归框列表，端口标识符用<code>&lt;&gt;</code>引起。对于下述示例代码：  </p>
+<pre><code>graph demo {
+  node[fontname=&quot;Fangsong&quot;]
+  edge[fontname=&quot;Fangsong&quot;]
+
+  a[label=&quot;右\r中\n左\l&quot;];
+  b[label=&quot;图名称\G&quot;]
+  d[label=&quot;节点名称\N&quot;]
+  f[shape=record,label=&quot;&lt;f0&gt; 左|&lt;f1&gt; 中|&lt;f2&gt; 右&quot;]
+
+  a--b--c[label=&quot;头\H&quot;]
+  a--d--e[label=&quot;尾\T&quot;]
+  a--f:f0--g[label=&quot;边\E&quot;] 
+}
+</code></pre><p>生成的图片如下：<br><img src="/2019/10/25/Graphviz学习笔记/index/label-demo.png" alt="label-demo"></p>
+</li>
+<li><p><code>labelloc</code>: 标签的垂直位置。如果是图或者子图，可以设置为<code>b</code> 和 <code>t</code>, 如果是节点，可以设置为 <code>b</code>、 <code>t</code> 和 <code>c</code></p>
+</li>
+</ul>
+<h4 id="图属性"><a href="#图属性" class="headerlink" title="图属性"></a>图属性</h4><ul>
+<li><code>size=&quot;x,y&quot;</code>: 指定图片的最大尺寸，单位为英寸。</li>
+<li><code>ratio=f</code>: 设置长宽比，<code>f</code>可以是一个浮点数，也可以是<code>fill</code>, <code>compress</code>, <code>auto</code>.</li>
+<li><code>layout=engine</code>: 指定布局。可选值为<code>dot</code>,<code>neato</code>,<code>fdp</code> 等等在前面相关命令中列出的值。</li>
+<li><code>margin=f</code>: 设置页面边距，包含在页面尺寸内。</li>
+<li><code>ordering=o</code>: <code>o</code> 可以是<code>in</code>, <code>out</code>, 当为 <code>in</code> 时，节点的排列顺序等同于它们出现在定义文件中的顺序，当为<code>out</code> 时， 节点的排列顺序等同于它们作为边的目标节点出现在定义文件中的顺序， <code>in</code> 也可以看作是作为边的源节点在定义文件中出现的顺序。  </li>
+<li><code>rotate=n</code>: 设置水平模式。 <code>n</code>为90时，图片会旋转90度。</li>
+<li><code>center=n</code>: 尚不清楚用法。</li>
+<li><code>color=colorvalue</code>: 设置前景色。</li>
+<li><code>bgcolor=colorvalue</code>: 设置背景色。</li>
+<li><code>overlap=mode</code>:  <code>mode</code>如果设置为<code>false</code>，则会以Prism算法调整节点以消除重叠。如果<code>mode</code>设置为<code>scale</code>，则布局均匀扩大规模，保留节点大小，直到节点不再重叠。后一种模式可在保留对称性和结构的同时消除重叠，前者将重叠部分更紧凑地消除，但是会破坏对称性。如果<code>mode</code>设置为<code>true</code>(默认设置)，则不会消除重叠部分。由于<code>dot</code>布局算法下总是会生成不重叠的节点，因此该属性只对其他布局有用。</li>
+<li><code>stylesheet=&quot;file.css&quot;</code> 引入一个外部的样式文件，仅当输出格式为<code>svg</code>和 <code>svgz</code>时有效。</li>
+<li><code>splines=mode</code>: <code>mode</code>如果设置为<code>true</code>,则边将会绘制为样条线。如果设置为<code>polyline</code>， 则边会绘制为折线。如果设置为<code>ortho</code>， 边将会绘制为正交折线。如果设置为<code>false</code> 或者<code>line</code> ，则边将绘制为线段。</li>
+<li><code>concentrate=true</code>: 如果为true，则会将多边合并为一条边，并导致部分平行的边共享其路径的一部分。 后一个功能在<code>dot</code>外尚不可用。</li>
+<li><code>labeljust</code>: 标签对齐方式, <code>l</code>为左对齐, <code>r</code>为右对齐， 其他设置为居中对齐。</li>
+<li><code>newrank=true</code>: 设置该属性为true时，允许跨cluster定义<code>rank=same</code>的节点。</li>
+</ul>
+<h5 id="dot特定属性"><a href="#dot特定属性" class="headerlink" title="dot特定属性"></a>dot特定属性</h5><ul>
+<li><code>compound=true|false</code>: 如果设置为<code>true</code>， 则允许cluster之间用边连接。</li>
+<li><code>nodesep=f</code>: 设置节点间的最小间隔</li>
+<li><code>ranksep=f</code>: 设置排序间的最小间隔</li>
+<li><code>rankdir=LR|RL|BT</code>: 设置排序方向： 从左到右|从右到左|从下到上</li>
+<li><code>rank=same|min|max</code>: 约束子图中节点的排序权重。如果子图名称包含前缀<code>cluster</code>,它的节点会布局在一个独立的矩形框中。</li>
+</ul>
+<h4 id="节点属性"><a href="#节点属性" class="headerlink" title="节点属性"></a>节点属性</h4><ul>
+<li><code>height=d</code>: 设置最小高度</li>
+<li><code>width=d</code>: 设置最小宽度</li>
+<li><code>shape=mode</code>: <code>mode</code>可以设置为<code>plaintext</code>, <code>ellipse</code>, <code>oval</code>, <code>circle</code>, <code>egg</code>, <code>triangle</code>, <code>box</code>, <code>diamond</code>, <code>trapezium</code>, <code>parallelogram</code>, <code>house</code>, <code>hexagon</code>, <code>octagon</code>, <code>note</code>, <code>tab</code>, <code>box3d</code>, <code>component</code>, <code>record</code>, <code>epsf</code>。其中<code>epsf</code>使用节点的<code>shapefile</code>属性作为外部EPSF文件导入节点形状。</li>
+<li><code>color=colorvalue</code>: 设置边框颜色，如果<code>style</code>属性是<code>filled</code> 并且 <code>fillcolor</code>属性没有特别指定，这个设置也会作为默认的填充颜色。</li>
+<li><code>fillcolor=colorvalue</code>: 当<code>style=filled</code>时，设置填充颜色。</li>
+<li><code>style=filled|solid|dashed|dotted|bold|invis</code>: <code>filled</code>为填充， <code>solid</code>为实线边框，<code>dashed</code>为破折号组成的虚线边框，<code>dotted</code>为点组成的虚线边框， <code>bold</code>为加粗边框， <code>invis</code>为隐藏节点，这个设置值在调整布局的时候很有用处。</li>
+<li><code>xlabel=text</code>: 指定在节点附近位于节点外部的标签文本，可以作为节点注释使用。</li>
+<li><code>target=target</code>: 只有当节点设置了<code>URL</code>属性的时候有效。且仅用于部分格式，如SVG/client-side imagemaps。</li>
+<li><code>tooltip</code>: 生效情况同<code>target</code>。</li>
+<li><code>regular=n</code>: 如果<code>n</code>为非零值，则将多边形设置为规则形状，即绕x和y轴对称，否则该多边形将采用标签的长宽比。 还不规则的内置多边形可以<br>通过此属性设置为规则的。 已经是规则的内置多边形不会受到影响（即它们不会设为不对称）。</li>
+<li><code>peripheries=n</code>: 设置围绕多表型绘制的边框的数量。比如n=2时，节点会有两层边框。</li>
+<li><code>sides=n</code>: 设置多边形的边数。这个属性会被内置多边形忽略。</li>
+<li><code>orientation=f</code>: 设置多边形的第一个定点从垂直方向逆时针的角度。f可以是浮点数。标签的方向不受这个属性影响。</li>
+<li><code>distortion=f</code>: 设置多边形的顶部变宽和底部变窄的量（相对的方向）。 建议浮点值介于-1和+1之间。 这个属性会被内置多边形忽略。</li>
+<li><code>skew=f</code>: 设置多边形顶部的右移和底部的左移量（相对于其方向）。 建议浮点值介于-1和+1之间。这个属性会被内置多边形忽略。</li>
+</ul>
+<h4 id="边属性"><a href="#边属性" class="headerlink" title="边属性"></a>边属性</h4><ul>
+<li><code>weight=val</code>: 设置边的权重。对于<code>dot</code>，权重必须是非负整数。权重越大，边长越短;排序节点会忽略权重为0的边。对于<code>twopi</code>，权重为0将导致在构建基础生成树时忽略该边。对于<code>neato</code> 和 <code>fdp</code>，权重越大，边长越接近边的<code>len</code>属性指定的长度。</li>
+<li><code>style=solid|dashed|dotted|bold|invis</code>: 和节点的<code>style</code>属性类似。</li>
+<li><code>color=colorvalue</code>: 设置边的颜色。</li>
+<li><code>color=colorvaluelist</code>: 用 <code>:</code> 分隔的颜色列表，有几个颜色就会生成几条平行边，边的颜色依次是指定的颜色。</li>
+<li><code>dir=forward|back|both|none</code>: 边的方向。</li>
+<li><code>headclip=false|true</code>: 边的头端点是否裁剪。默认为<code>true</code>，设置为<code>false</code>时,头端点会伸入节点内部。</li>
+<li><code>tailclip=false|true</code>: 边的尾端点是否裁剪。默认为<code>true</code>，设置为<code>false</code>时,尾端点会伸入节点内部。</li>
+<li><code>targe=text</code>: 同节点的<code>target</code>。</li>
+<li><code>tooltip</code>: 同节点的<code>tooltip</code>。</li>
+<li><code>arrowhead,arrowtail=mode</code>: 指定边的两个端点箭头的形状。<code>mode</code>可以取值为 <code>none</code>, <code>normal</code>, <code>inv</code>, <code>dot</code>, <code>odot</code>, <code>invdot</code>, <code>invodot</code>, <code>tee</code>, <code>empty</code>, <code>invempty</code>, <code>open</code>, <code>halfopen</code>, <code>diamond</code>, <code>odiamond</code>, <code>box</code>, <code>obox</code>, <code>crow</code>。</li>
+<li><code>arrowsize=val</code>: 设置箭头大小比例因子。如设置为2，则将箭头按比例扩大2倍。</li>
+<li><code>headlabel,taillabel=text</code>: 设置边两个端点标签文本。同时<code>labelfontcolor</code>, <code>labelfontname</code>, <code>labelfontsize</code> 可以设置两个端点标签的字体属性。</li>
+<li><code>headhref,headURL,headtooltip,headtarget,tailhref,tailURL,tailtarget,tailtooltip</code>: 这些属性和节点的相关属性类似，不再赘述。</li>
+<li><code>labeldistance, labelangle</code>: 这两个属性指定头尾标签的位置。</li>
+<li><code>decorate=true|false</code>: 如果设置为<code>true</code>，将会从边画一条线到label，并且在label下方生成下划线。</li>
+<li><code>samehead,sametail</code>: 设置边使用相同的头端点和尾端点。</li>
+<li><code>headport,tailport</code>: 设置边的两个端点连接的位置，默认边会指向节点的中心，然后在节点边界的位置截断。可设置值为 <code>n</code>,<code>ne</code>,<code>e</code>, <code>se</code>,<code>s</code>,<code>sw</code>,<code>w</code>,<code>nw</code>,<code>c</code>。</li>
+</ul>
+<h5 id="dot特定属性-1"><a href="#dot特定属性-1" class="headerlink" title="dot特定属性"></a>dot特定属性</h5><ul>
+<li><code>constraint=false</code>: 设置该属性为<code>false</code>时会导致该边在分配rank时被忽略。</li>
+<li><code>minlen=n</code>: <code>n</code> 是边长的整数倍数。可用此属性扩大边长。</li>
+<li><code>xlabel</code>: 同节点的<code>xlabel</code>。</li>
+<li><code>lhead, ltail</code>: 逻辑头、尾，可以用它来设置节点和cluster的连接（连接cluster内部的节点，然后设置<code>lhead</code>或者 <code>ltail</code> 为cluster名称）。 </li>
+</ul>
+<p>上面已经列举出来绝大部分常用属性，可以通过查看<a href="https://graphviz.gitlab.io/_pages/doc/info/attrs.html" target="_blank" rel="noopener">官方文档</a>获取更全面的属性信息。看完这些，不知你是否能用graphviz解决我最开始提出的plantuml自动布局的不足之处呢？</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/graphviz/" rel="tag"># graphviz</a>
+              <a href="/tags/画图工具/" rel="tag"># 画图工具</a>
+              <a href="/tags/dot/" rel="tag"># dot</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2019/10/24/Mysql基础架构解析/index.html" rel="prev" title="Mysql基础架构解析">
+      <i class="fa fa-chevron-left"></i> Mysql基础架构解析
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2019/10/27/Mysql日志模块学习笔记/index.html" rel="next" title="Mysql日志模块学习笔记">
+      Mysql日志模块学习笔记 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+  </div>
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-3"><a class="nav-link" href="#graphviz简介"><span class="nav-number">1.</span> <span class="nav-text">graphviz简介</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#dot语言语法"><span class="nav-number">2.</span> <span class="nav-text">dot语言语法</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#相关命令"><span class="nav-number">3.</span> <span class="nav-text">相关命令</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#dot"><span class="nav-number">3.1.</span> <span class="nav-text">dot</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#neato"><span class="nav-number">3.2.</span> <span class="nav-text">neato</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#fdp"><span class="nav-number">3.3.</span> <span class="nav-text">fdp</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#sfdp"><span class="nav-number">3.4.</span> <span class="nav-text">sfdp</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#twopi"><span class="nav-number">3.5.</span> <span class="nav-text">twopi</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#circo"><span class="nav-number">3.6.</span> <span class="nav-text">circo</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#patchwork"><span class="nav-number">3.7.</span> <span class="nav-text">patchwork</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#osage"><span class="nav-number">3.8.</span> <span class="nav-text">osage</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#相关属性"><span class="nav-number">4.</span> <span class="nav-text">相关属性</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#通用属性"><span class="nav-number">4.1.</span> <span class="nav-text">通用属性</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#图属性"><span class="nav-number">4.2.</span> <span class="nav-text">图属性</span></a><ol class="nav-child"><li class="nav-item nav-level-5"><a class="nav-link" href="#dot特定属性"><span class="nav-number">4.2.1.</span> <span class="nav-text">dot特定属性</span></a></li></ol></li><li class="nav-item nav-level-4"><a class="nav-link" href="#节点属性"><span class="nav-number">4.3.</span> <span class="nav-text">节点属性</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#边属性"><span class="nav-number">4.4.</span> <span class="nav-text">边属性</span></a><ol class="nav-child"><li class="nav-item nav-level-5"><a class="nav-link" href="#dot特定属性-1"><span class="nav-number">4.4.1.</span> <span class="nav-text">dot特定属性</span></a></li></ol></li></ol></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Tian Weilong"
+      src="https://avatars1.githubusercontent.com/u/3870357?v=3&s=460">
+  <p class="site-author-name" itemprop="name">Tian Weilong</p>
+  <div class="site-description" itemprop="description">LOVE wat u do. DO it GREAT.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">20</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/categories/">
+        <span class="site-state-item-count">4</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+        <span class="site-state-item-count">36</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2020</span>
+  <span class="with-love">
+    <i class="fa fa-user"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Tian Weilong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+<script src="/js/utils.js"></script><script src="/js/motion.js"></script>
+<script src="/js/schemes/muse.js"></script>
+<script src="/js/next-boot.js"></script><!-- hexo-inject:begin --><!-- hexo-inject:end -->
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

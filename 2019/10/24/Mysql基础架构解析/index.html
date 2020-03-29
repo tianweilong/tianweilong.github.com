@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <!-- hexo-inject:begin --><!-- hexo-inject:end --><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 3.9.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/font-awesome.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"blog.tianwl.com","root":"/","scheme":"Muse","version":"7.7.2","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="最近想系统整理一下Mysql的相关知识，先从最基础的宏观架构开始，看看里面有哪些组件，然后一层层拆解，希望通过拆解的过程，加深自己对Mysql的理解。">
+<meta name="keywords" content="mysql,架构">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Mysql基础架构解析">
+<meta property="og:url" content="http://blog.tianwl.com/2019/10/24/Mysql基础架构解析/index.html">
+<meta property="og:site_name" content="VINO">
+<meta property="og:description" content="最近想系统整理一下Mysql的相关知识，先从最基础的宏观架构开始，看看里面有哪些组件，然后一层层拆解，希望通过拆解的过程，加深自己对Mysql的理解。">
+<meta property="og:locale" content="zh-CN">
+<meta property="og:image" content="http://blog.tianwl.com/2019/10/24/Mysql基础架构解析/index/Mysql基础架构示意图.png">
+<meta property="og:updated_time" content="2020-03-28T13:55:03.322Z">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Mysql基础架构解析">
+<meta name="twitter:description" content="最近想系统整理一下Mysql的相关知识，先从最基础的宏观架构开始，看看里面有哪些组件，然后一层层拆解，希望通过拆解的过程，加深自己对Mysql的理解。">
+<meta name="twitter:image" content="http://blog.tianwl.com/2019/10/24/Mysql基础架构解析/index/Mysql基础架构示意图.png">
+
+<link rel="canonical" href="http://blog.tianwl.com/2019/10/24/Mysql基础架构解析/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>Mysql基础架构解析 | VINO</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript><!-- hexo-inject:begin --><!-- hexo-inject:end -->
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <!-- hexo-inject:begin --><!-- hexo-inject:end --><div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">VINO</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-fw fa-home"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-fw fa-archive"></i>归档</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post">
+            
+
+  <div class="posts-expand">
+      
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="http://blog.tianwl.com/2019/10/24/Mysql基础架构解析/index.html">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars1.githubusercontent.com/u/3870357?v=3&s=460">
+      <meta itemprop="name" content="Tian Weilong">
+      <meta itemprop="description" content="LOVE wat u do. DO it GREAT.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="VINO">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Mysql基础架构解析
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="fa fa-calendar-o"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2019-10-24 23:23:31" itemprop="dateCreated datePublished" datetime="2019-10-24T23:23:31+08:00">2019-10-24</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="fa fa-folder-o"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/数据库/" itemprop="url" rel="index"><span itemprop="name">数据库</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>最近想系统整理一下Mysql的相关知识，先从最基础的宏观架构开始，看看里面有哪些组件，然后一层层拆解，希望通过拆解的过程，加深自己对Mysql的理解。  </p>
+<a id="more"></a>
+<p>Mysql的基本架构图大致如下：</p>
+<p><img src="/2019/10/24/Mysql基础架构解析/index/Mysql基础架构示意图.png" alt="Mysql基础架构示意图"></p>
+<!-- digraph Q {
+  compound=true
+  graph [label="Mysql基础架构示意图", labelloc=t, fontsize=20, fontname="Fangsong"];
+  node [shape=box,style=filled,color=".7 .3 1.0", height=1, fontname="Fangsong"];
+
+  subgraph sub_1 {
+    client   [label = "客户端"];
+  }
+
+  subgraph cluster_1 {
+    graph [label="Server层"]
+    trans1 [width=4,  height=.01, label="", style=invis]
+    trans2 [width=4,  height=.01, label="", style=invis]
+    connector [label = "连接器"];
+    cache [label = "查询缓存"];
+    analyzer [label = "分析器"];
+    optimizer   [label = "优化器"];
+    actuator [label = "执行器"];
+
+    {rank=same optimizer actuator cache analyzer}
+    connector->analyzer
+    optimizer->analyzer [dir=back]
+    actuator->optimizer [dir=back]
+    analyzer->cache
+    connector->cache
+    trans1->connector [ minlen=1, style=invis]
+    analyzer->trans2 [style=invis]
+  }
+
+  subgraph cluster_2 {
+    graph [label="引擎层"]
+    MyISAM   [label = "MyISAM", shape=circle];
+    InnoDB   [label = "InnoDB", shape=circle];
+    Memory   [label = "Memory", shape=circle];
+  }
+
+  client->trans1 [lhead=cluster_1, minlen=2]
+  trans2->InnoDB [headport=n, lhead=cluster_2, ltail=cluster_1, tailport=s, minlen=2]
+
+} -->
+<p>从上图可以看出， Mysql可以分为Server层和引擎层两部分，Server层包含了Mysql大多数核心服务功能。引擎层负责数据的存储和提取，最常用的引擎是InnoDB，从Mysql 5.5.5版本以后它成为了默认的存储引擎。</p>
+<p>由于核心服务大都在Server层，下面我们就来看看图中Server层每个组件的作用。</p>
+<ul>
+<li><p>连接器<br>它负责跟客户端（如Navicat、JDBC、Python、PHP等等）建立连接、获取权限、维持和管理连接。建立连接以后，如果客户端太长时间没有请求，连接器会自动将其断开。这个时间是由参数<code>wait_timeout</code>控制的，默认值是8小时。我们有时候会遇到<code>Lost connection to MYSQL server during query</code>的报错提示，就是连接被连接器断开了，需要重连以后才能执行新的请求。</p>
+</li>
+<li><p>查询缓存<br>Mysql收到一个查询请求时，会先去查询缓存看看这条语句的结果是否存在缓存中，如果有，则这条语句的查询结果会直接返回给客户端。如果不存在，则会走图中分析器相关的路径。如果将参数<code>query_cache_type</code>设置成<code>DEMAND</code>，默认的SQL语句都不会使用查询缓存。此时可以在SQL中使用<code>SQL_CACHE</code>显式指定使用查询缓存。例如 <code>select SQL_CACHE * from user where id = 8</code>。值得注意的是，Mysql 8.0的版本将查询缓存整块功能删除掉了。</p>
+</li>
+<li><p>分析器<br>当你输入一条SQL语句，没有命中查询缓存的时候，分析器就开始工作了，它主要是对你输入的语句做解析，以让Mysql明白你到底要做什么。分析器主要会对语句进行“词法分析”和“语法分析”， 词法分析主要用来识别语句里的字符串分别是什么，代表什么含义。比如识别 <code>user</code>为表名, <code>id</code>为列名等等。语法分析会根据词法分析的结果，判断你输入的语句是否符合Mysql的语法，通常我们遇到<code>You have an error in your SQL syntax</code>的错误提醒，就是语法分析检测出来的结果。</p>
+</li>
+<li><p>优化器<br>经过分析器处理以后，Mysql已经知道你要做什么了，但是这还不够，在语句开始执行前，还需要经过优化器的处理。比如表里面有多个索引时，需要优化器决定使用哪个索引，语句有多个表关联时，需要优化器决定各个表的连接顺序，目的主要是提升语句的性能。</p>
+</li>
+<li><p>执行器<br>语句经过优化器优化以后，就开始进入执行器执行。首先，它会先判断一下你对语句中涉及的表有没有权限，如果没有，则会抛出没有权限的错误。如果有权限，则会打开相关表继续执行，它会根据表的引擎定义，去使用这个引擎提供的接口。执行的逻辑大致是： 第一次调用“取满足条件的第一行”这个接口，之后循环取“满足条件的下一行”这个接口。我们有时候在慢查询日志中看到<code>rows_examined</code>的字段值就是调用引擎获取数据行的时候累加的。</p>
+</li>
+</ul>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/mysql/" rel="tag"># mysql</a>
+              <a href="/tags/架构/" rel="tag"># 架构</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2019/10/16/使用plantuml设计C4模型软件架构图/index.html" rel="prev" title="使用plantuml设计C4模型软件架构图">
+      <i class="fa fa-chevron-left"></i> 使用plantuml设计C4模型软件架构图
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2019/10/25/Graphviz学习笔记/index.html" rel="next" title="Graphviz学习笔记">
+      Graphviz学习笔记 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+  </div>
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Tian Weilong"
+      src="https://avatars1.githubusercontent.com/u/3870357?v=3&s=460">
+  <p class="site-author-name" itemprop="name">Tian Weilong</p>
+  <div class="site-description" itemprop="description">LOVE wat u do. DO it GREAT.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">20</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/categories/">
+        <span class="site-state-item-count">4</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+        <span class="site-state-item-count">36</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2020</span>
+  <span class="with-love">
+    <i class="fa fa-user"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Tian Weilong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+<script src="/js/utils.js"></script><script src="/js/motion.js"></script>
+<script src="/js/schemes/muse.js"></script>
+<script src="/js/next-boot.js"></script><!-- hexo-inject:begin --><!-- hexo-inject:end -->
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

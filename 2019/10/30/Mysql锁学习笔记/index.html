@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <!-- hexo-inject:begin --><!-- hexo-inject:end --><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 3.9.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/font-awesome.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"blog.tianwl.com","root":"/","scheme":"Muse","version":"7.7.2","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="根据加锁的范围，Mysql中的锁大致分为三类： 全局锁， 表级锁， 行锁。今天就来对这三类锁可能产生的一些现象和其背后的原理做个简单的总结。">
+<meta name="keywords" content="mysql,表锁,行锁,全局锁">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Mysql锁学习笔记">
+<meta property="og:url" content="http://blog.tianwl.com/2019/10/30/Mysql锁学习笔记/index.html">
+<meta property="og:site_name" content="VINO">
+<meta property="og:description" content="根据加锁的范围，Mysql中的锁大致分为三类： 全局锁， 表级锁， 行锁。今天就来对这三类锁可能产生的一些现象和其背后的原理做个简单的总结。">
+<meta property="og:locale" content="zh-CN">
+<meta property="og:image" content="http://blog.tianwl.com/2019/10/30/Mysql锁学习笔记/index/backup.png">
+<meta property="og:image" content="http://blog.tianwl.com/2019/10/30/Mysql锁学习笔记/index/mdl.png">
+<meta property="og:updated_time" content="2020-03-28T13:55:03.322Z">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Mysql锁学习笔记">
+<meta name="twitter:description" content="根据加锁的范围，Mysql中的锁大致分为三类： 全局锁， 表级锁， 行锁。今天就来对这三类锁可能产生的一些现象和其背后的原理做个简单的总结。">
+<meta name="twitter:image" content="http://blog.tianwl.com/2019/10/30/Mysql锁学习笔记/index/backup.png">
+
+<link rel="canonical" href="http://blog.tianwl.com/2019/10/30/Mysql锁学习笔记/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>Mysql锁学习笔记 | VINO</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript><!-- hexo-inject:begin --><!-- hexo-inject:end -->
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <!-- hexo-inject:begin --><!-- hexo-inject:end --><div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">VINO</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-fw fa-home"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-fw fa-archive"></i>归档</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post">
+            
+
+  <div class="posts-expand">
+      
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="http://blog.tianwl.com/2019/10/30/Mysql锁学习笔记/index.html">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars1.githubusercontent.com/u/3870357?v=3&s=460">
+      <meta itemprop="name" content="Tian Weilong">
+      <meta itemprop="description" content="LOVE wat u do. DO it GREAT.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="VINO">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Mysql锁学习笔记
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="fa fa-calendar-o"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2019-10-30 21:36:49" itemprop="dateCreated datePublished" datetime="2019-10-30T21:36:49+08:00">2019-10-30</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="fa fa-folder-o"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/数据库/" itemprop="url" rel="index"><span itemprop="name">数据库</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>根据加锁的范围，Mysql中的锁大致分为三类： <code>全局锁</code>， <code>表级锁</code>， <code>行锁</code>。今天就来对这三类锁可能产生的一些现象和其背后的原理做个简单的总结。</p>
+<a id="more"></a>
+<h3 id="全局锁"><a href="#全局锁" class="headerlink" title="全局锁"></a>全局锁</h3><p>全局锁就是对这个数据库实例加锁。在Mysql中可以通过命令<code>flush tables with read lock</code>给整个数据库加只读锁。数据库加了只读锁以后，其他线程的以下语句会被阻塞： 数据更新、数据定义、更新类事务的提交。只有当加锁的线程释放锁后（退出线程或者执行<code>unlock tables</code>），其他线程被阻塞的语句才能继续执行。而如果在执行加锁的线程中执行这些语句，则会报<code>ERROR 1223 (HY000): Can&#39;t execute the query because you have a conflicting read lock</code>。这样一来，所有线程都不能对数据库做这些更新操作，是不是很危险？那么什么情况下会用到全局锁呢？</p>
+<p>全局锁的一个典型应用场景就是做全库的逻辑备份。为什么备份的时候需要加全局锁呢？我们不妨反过来看，如果不加全局锁会产生什么问题。假设你现在在维护一个影视会员系统，简单起见，我们只关注用户账户余额和会员时长。如果按照时间顺序，先备份账户余额表， 后备份会员时长表。大致流程如下：</p>
+<p><img src="/2019/10/30/Mysql锁学习笔记/index/backup.png" alt="影视会员系统备份流程图"></p>
+<!-- ZGlncmFwaCBHIHsNCiAgICBmb250bmFtZT0iRmFuZ3NvbmciDQogICAgY29tcG91bmQ9dHJ1ZQ0K
+ICAgIG5ld3Jhbms9dHJ1ZQ0KICAgIGxhYmVsPSLlvbHop4bkvJrlkZjns7vnu5/lpIfku73mtYHn
+qIvlm75cblxuIg0KICAgIGxhYmVsbG9jPXQNCiAgICANCiAgICBub2RlW2ZvbnRuYW1lPSJGYW5n
+c29uZyJdDQogICAgZWRnZVtmb250bmFtZT0iRmFuZ3NvbmciXQ0KICAgIA0KICAgIHN0YXJ0IFts
+YWJlbCA9ICLlvIDlp4vlpIfku70iXQ0KDQogICAgYmFsYW5jZSBbbGFiZWwgPSAi5aSH5Lu96LSm
+5oi35L2Z6aKd6KGoIl0NCg0KICAgIGJ1eSBbbGFiZWwgPSAi55So5oi35byg5LiJ5L2/55SoXG7o
+tKbmiLfkvZnpop0xMDDlhYNcbui0reS5sOS4gOW5tOS8muWRmCJdDQoNCiAgICB0aW1lIFtsYWJl
+bCA9ICLlpIfku73kvJrlkZjml7bplb/ooagiXQ0KDQogICAgZW5kIFtsYWJlbCA9ICLnu5PmnZ/l
+pIfku70iXQ0KDQogICAgc3RhcnQtPmJhbGFuY2UtPmJ1eS0+dGltZS0+ZW5kW3dlaWdodD00XQ0K
+DQoNCiAgICBuMSBbc2hhcGU9cmVjb3JkLCBsYWJlbCA9ICJ7eyDotKbmiLfkvZnpop3ooaggfCDl
+vKDkuIkgfCAyMDB9IHwgeyDkvJrlkZjml7bplb/ooaggfCDlvKDkuIkgfCAx5bm0IH19Iiwgc3R5
+bGU9ZmlsbGVkLCBmaWxsY29sb3I9bGlnaHRza3libHVlXQ0KDQoNCiAgICBuMiBbc2hhcGU9cmVj
+b3JkLCBsYWJlbCA9ICJ7eyDotKbmiLfkvZnpop3ooaggfCDlvKDkuIkgfCAyMDB9IHwgeyDkvJrl
+kZjml7bplb/ooaggfCDlsJrmnKrlpIfku70mbmJzcDsgfX0iLCBzdHlsZT1maWxsZWQsIGZpbGxj
+b2xvcj1saWdodHNhbG1vbl0NCg0KICAgIG4zIFtzaGFwZT1yZWNvcmQsIGxhYmVsID0gInt7IOi0
+puaIt+S9memineihqCB8IOW8oOS4iSB8IDEwMH0gfCB7IOS8muWRmOaXtumVv+ihqCB8IOW8oOS4
+iSB8IDLlubQgfX0iLCBzdHlsZT1maWxsZWQsIGZpbGxjb2xvcj1saWdodHNreWJsdWVdDQoNCiAg
+ICBuNCBbc2hhcGU9cmVjb3JkLCBsYWJlbCA9ICJ7eyDotKbmiLfkvZnpop3ooaggfCDlvKDkuIkg
+fCAyMDB9IHwgeyDkvJrlkZjml7bplb/ooaggfCDlvKDkuIkgfCAy5bm0IH19Iiwgc3R5bGU9Zmls
+bGVkLCBmaWxsY29sb3I9bGlnaHRzYWxtb25dDQoNCiAgICB7cmFuaz1zYW1lIG4xIHN0YXJ0fQ0K
+ICAgIHtyYW5rPXNhbWUgbjIgYmFsYW5jZX0NCiAgICB7cmFuaz1zYW1lIG4zIGJ1eX0NCiAgICB7
+cmFuaz1zYW1lIG40IHRpbWV9DQoNCiAgICBzdGFydCAtPiBuMSBbbGFiZWw9IiZuYnNwOyZuYnNw
+O+W9k+WJjeaVsOaNruW6k+eKtuaAgSZuYnNwOyZuYnNwOyJdDQogICAgYmFsYW5jZSAtPiBuMiBb
+bGFiZWw9IiZuYnNwOyZuYnNwO+Wkh+S7veW6k+eKtuaAgSZuYnNwOyZuYnNwOyJdDQogICAgYnV5
+IC0+IG4zIFtsYWJlbD0i5b2T5YmN5pWw5o2u5bqT54q25oCBIl0NCiAgICB0aW1lIC0+IG40IFts
+YWJlbD0iJm5ic3A7Jm5ic3A75aSH5Lu95bqT54q25oCBJm5ic3A7Jm5ic3A7Il0NCn0= -->
+<p>从上图可以看出，这个备份流程里，最终张三账户余额没有扣，会员时长却加了1年，这显然不是我们想要的结果。产生这个问题的根本原因是，备份系统备份时查询到数据不是同一个时间点的。 在<a href="/2019/10/13/Mysql事务隔离实例分析/index.html" title="Mysql事务隔离实例分析">Mysql事务隔离实例分析</a> 一文中，对于“可重复读”隔离级别有这样一段定义：</p>
+<blockquote>
+<p>一个事务执行过程中看到的数据，总是跟这个事务启动时看到的数据是一致的  </p>
+</blockquote>
+<p>如果备份时在“可重复读”隔离级别下开启一个事务，是不是就能达到加全局锁的效果了？ 实际上官方自带的mysqldump 使用参数 <code>--single-transaction</code> 的时候，就是使用了这个原理。 因此对于支持事务的引擎，在备份时我们应该优先使用这个功能，而只有当引擎不支持事务时，我们才使用全局锁的方式。</p>
+<p>另外，还有一个命令<code>set global readonly=true</code> 也能达到全库只读的目的，但是它有以下两个缺陷：</p>
+<ul>
+<li>在某些系统中，readonly的值会被用来做其他逻辑，如判断一个库是主库还是备库，因此修改global遍历的方式影响面更大。</li>
+<li>将整个库设置为readonly以后，如果客户端异常断开，数据库会一致保持readonly状态，风险更高。</li>
+</ul>
+<h3 id="表级锁"><a href="#表级锁" class="headerlink" title="表级锁"></a>表级锁</h3><p>Mysql里有两种表级锁： 一种是表锁， 一种是元数据锁 (<code>meta data lock</code> MDL)。 </p>
+<p>我们可以使用 <code>lock tables ... read/write</code>。表锁的释放和全局锁类似，可以用<code>unlock tables</code> 也可以通过断开客户端释放。 在出现更细粒度的锁之前，表锁是常用的处理并发的方式。而对于InnoDB这种支持行锁的引擎，一般不使用<code>lock tables</code> 控制并发，因为锁住整个表的影响面还是太大。</p>
+<p>对于元数据锁MDL， 它不需要显式使用，在访问一个表的时候会被自动加上。它的作用是保证读写的正确性。可以想象一个这样的场景，假如一个查询正在遍历用户表中的数据，而执行期间另一个线程删除了用户表中<code>固定电话</code>一列， 那么查询线程拿到的结果跟表结构就对不上了。 加锁的逻辑大概是这样的： 当对一个表做增删改查操作的时候，加MDL读锁，当对表结构做变更操作的时候，加MDL写锁。读锁与读锁不互斥， 写锁与任何锁互斥。</p>
+<p>MDL虽然是自动加的，但是平时如果不注意它的特性，很可能会对线上服务造成严重影响。如下图：</p>
+<p><img src="/2019/10/30/Mysql锁学习笔记/index/mdl.png" alt="MDL锁阻塞示意图"></p>
+<!-- digraph G {
+    fontname="Fangsong"
+    compound=true
+    newrank=true
+    label="MDL锁阻塞示意图\n\n"
+    labelloc=t
+
+    node[fontname="Fangsong"]
+    edge[fontname="Fangsong"]
+
+    subgraph cluster1 {
+        label = "Session A"
+        style = dashed
+        n1 [shape=record, label="{ begin; | select * from  demo limit 1; }"]
+    }
+
+    subgraph cluster2 {
+        label = "Session B"
+        style = dashed
+        n2 [shape=record, label="{ select * from  demo limit 1; | (不阻塞) } ", style=filled, fillcolor=darkseagreen]
+    }
+
+    subgraph cluster3 {
+        label = "Session C"
+        style = dashed
+        n3 [shape=record, label="{ alter table demo add t int; | (阻塞) } ", style=filled, fillcolor=lightcoral]
+    }
+
+    subgraph cluster4 {
+        label = "Session D"
+        style = dashed
+        n4 [shape=record, label="{ select * from  demo limit 1; | (阻塞) } ", style=filled, fillcolor=lightcoral]
+    }
+
+    n1->n2 [lhead=cluster2, ltail=cluster1, minlen=2]
+    n2->n3 [lhead=cluster3, ltail=cluster2, minlen=2]
+    n3->n4 [lhead=cluster4, ltail=cluster3, minlen=2]
+} -->
+<p>Session A先启动开启一个事务，执行一个select语句以后，会对表demo加一个MDL读锁。而Session B需要的也是读锁，可以正常执行不会阻塞。对于Session C， 它需要加MDL写锁， 但是Session A 事务中的读锁还没释放， 前面说过MDL写锁会和任何锁互斥， 因此Session C会被阻塞。而对于Session D要申请读锁，也被Session C 阻塞了，也就是说demo表现在是完全不可读写了。</p>
+<p>如果demo表上的查询语句频繁，而客户端又有重试机制，这个库的线程很快就会爆满。因此我们在给表加字段的时候需要特别注意这个表上的长事务，如果有长事务时，要么暂停加字段操作，要么kill掉这个长事务。</p>
+<h3 id="行锁"><a href="#行锁" class="headerlink" title="行锁"></a>行锁</h3><p>Mysql的行锁是由各个引擎自己实现的，比如InnoDB支持行锁，但是MyISAM不支持行锁，意味着MyISAM控制并发只能用表锁，这也是MyISAM被InnoDB替代的重要原因之一。</p>
+<h4 id="两阶段锁"><a href="#两阶段锁" class="headerlink" title="两阶段锁"></a>两阶段锁</h4><p>先看一个下表的例子：</p>
+<div class="table-container">
+<table>
+<thead>
+<tr>
+<th style="text-align:left">事务A</th>
+<th style="text-align:left">事务B</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">begin;</td>
+<td style="text-align:left"></td>
+</tr>
+<tr>
+<td style="text-align:left">update demo set count=count+1 where id = 1;</td>
+<td style="text-align:left"></td>
+</tr>
+<tr>
+<td style="text-align:left">update demo set count=count+1 where id = 2;</td>
+<td style="text-align:left"></td>
+</tr>
+<tr>
+<td style="text-align:left"></td>
+<td style="text-align:left">begin;</td>
+</tr>
+<tr>
+<td style="text-align:left"></td>
+<td style="text-align:left">update demo set count=count+1 where id = 1;</td>
+</tr>
+<tr>
+<td style="text-align:left">commit;</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>在这个例子中，事务B的update语句会被阻塞，直到事务A执行commit以后才能继续执行。这是因为事务A在执行update语句时持有的两条记录的行锁，都是在事务提交的时候才释放的， 这个就是两阶段锁协议。 因此我们平时在开发中应该把最可能造成锁冲突、最可能影响并发度的锁尽量往后放，以缩短这个锁持续的时间，从而降低阻塞的概率。</p>
+<h4 id="死锁和死锁检测"><a href="#死锁和死锁检测" class="headerlink" title="死锁和死锁检测"></a>死锁和死锁检测</h4><p>当并发系统中不同线程出现循环资源依赖，涉及的线程都在等待别的线程释放资源时，就会导致这几个线程都进入无限等待的状态，称为死锁。 看下面的例子：</p>
+<div class="table-container">
+<table>
+<thead>
+<tr>
+<th style="text-align:left">事务A</th>
+<th style="text-align:left">事务B</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">begin;</td>
+<td style="text-align:left"></td>
+</tr>
+<tr>
+<td style="text-align:left">update demo set count=count+1 where id = 1;</td>
+<td style="text-align:left"></td>
+</tr>
+<tr>
+<td style="text-align:left"></td>
+<td style="text-align:left">begin;</td>
+</tr>
+<tr>
+<td style="text-align:left"></td>
+<td style="text-align:left">update demo set count=count+1 where id = 2;</td>
+</tr>
+<tr>
+<td style="text-align:left">update demo set count=count+1 where id = 2;</td>
+<td style="text-align:left"></td>
+</tr>
+<tr>
+<td style="text-align:left"></td>
+<td style="text-align:left">update demo set count=count+1 where id = 1;</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>语句都执行完以后，事务A在等待事务B释放id=2的行锁， 事务B在等待事务A释放id=1的行锁，这就进入了死锁状态。出现死锁以后，有两种策略：</p>
+<ul>
+<li>直接进入等待，直至超时。这个超时时间由参数 <code>innodb_lock_wait_timeout</code> 设置。</li>
+<li>发起死锁检测，发现死锁以后，主动回滚其中某一个事务，让其他事务得以继续执行。死锁检测可以通过将参数<code>innodb_deadlock_detect</code>设置为<code>on</code> 来开启。</li>
+</ul>
+<p>在第一种策略中，如果<code>innodb_lock_wait_timeout</code>的值设置得过大，等待时间太长，对某些服务来说是无法接受，而如果设置得太小，比如1秒，却又可能将不是死锁的语句误杀。所以一般情况下，都是采用第二种策略，即主动死锁检测，但是它也是由额外开销的。</p>
+<p>死锁检测的一般过程是这样的： 每当一个事务被锁的时候，就会看看它所依赖的线程有没有被别人锁住，如此循环，最后判断是否出现了循环等待，也就是死锁。举个极端的例子，假如有1000个并发线程都要同时更新同一行，那么这个死锁检测操作次数就是100万的量级，这样会消耗大量的cpu资源。对于这种情况一般有以下三种解决方案：</p>
+<ul>
+<li>如果你能确保这个业务一定不会出现死锁，可以临时把死锁检测关掉。</li>
+<li>控制并发度，对相同行的更新，在进入引擎之前排队。这样在InnoDB内部就不会有大量的死锁检测工作了。</li>
+<li>将更新频繁的行拆分成逻辑上的多行来减少锁冲突</li>
+</ul>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/mysql/" rel="tag"># mysql</a>
+              <a href="/tags/表锁/" rel="tag"># 表锁</a>
+              <a href="/tags/行锁/" rel="tag"># 行锁</a>
+              <a href="/tags/全局锁/" rel="tag"># 全局锁</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2019/10/28/Mysql索引学习笔记/index.html" rel="prev" title="Mysql索引学习笔记">
+      <i class="fa fa-chevron-left"></i> Mysql索引学习笔记
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2019/11/02/Mysql如何选择合适的索引/index.html" rel="next" title="Mysql如何选择合适的索引">
+      Mysql如何选择合适的索引 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+  </div>
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-3"><a class="nav-link" href="#全局锁"><span class="nav-number">1.</span> <span class="nav-text">全局锁</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#表级锁"><span class="nav-number">2.</span> <span class="nav-text">表级锁</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#行锁"><span class="nav-number">3.</span> <span class="nav-text">行锁</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#两阶段锁"><span class="nav-number">3.1.</span> <span class="nav-text">两阶段锁</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#死锁和死锁检测"><span class="nav-number">3.2.</span> <span class="nav-text">死锁和死锁检测</span></a></li></ol></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Tian Weilong"
+      src="https://avatars1.githubusercontent.com/u/3870357?v=3&s=460">
+  <p class="site-author-name" itemprop="name">Tian Weilong</p>
+  <div class="site-description" itemprop="description">LOVE wat u do. DO it GREAT.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">20</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/categories/">
+        <span class="site-state-item-count">4</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+        <span class="site-state-item-count">36</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2020</span>
+  <span class="with-love">
+    <i class="fa fa-user"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Tian Weilong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+<script src="/js/utils.js"></script><script src="/js/motion.js"></script>
+<script src="/js/schemes/muse.js"></script>
+<script src="/js/next-boot.js"></script><!-- hexo-inject:begin --><!-- hexo-inject:end -->
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

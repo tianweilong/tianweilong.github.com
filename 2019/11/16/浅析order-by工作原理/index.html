@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <!-- hexo-inject:begin --><!-- hexo-inject:end --><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 3.9.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/font-awesome.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"blog.tianwl.com","root":"/","scheme":"Muse","version":"7.7.2","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="我们平时做业务开发的时候，经常会遇到按照指定字段升序或者降序来取结果的需求。比如一个论坛，要在首页展示最新发表的十个帖子，或者要展示回复量最多的十个帖子等等，排序语句的格式通常是这样的： select * from some_table order by some_field desc limit 10，有时候我们的order by语句执行很快，但是有时候又很慢，今天我们来分析一下order by">
+<meta name="keywords" content="mysql,排序,sort_buffer">
+<meta property="og:type" content="article">
+<meta property="og:title" content="浅析order by工作原理">
+<meta property="og:url" content="http://blog.tianwl.com/2019/11/16/浅析order-by工作原理/index.html">
+<meta property="og:site_name" content="VINO">
+<meta property="og:description" content="我们平时做业务开发的时候，经常会遇到按照指定字段升序或者降序来取结果的需求。比如一个论坛，要在首页展示最新发表的十个帖子，或者要展示回复量最多的十个帖子等等，排序语句的格式通常是这样的： select * from some_table order by some_field desc limit 10，有时候我们的order by语句执行很快，但是有时候又很慢，今天我们来分析一下order by">
+<meta property="og:locale" content="zh-CN">
+<meta property="og:image" content="http://blog.tianwl.com/2019/11/16/浅析order-by工作原理/index/explain.png">
+<meta property="og:image" content="http://blog.tianwl.com/2019/11/16/浅析order-by工作原理/index/province.png">
+<meta property="og:image" content="http://blog.tianwl.com/2019/11/16/浅析order-by工作原理/index/all.png">
+<meta property="og:image" content="http://blog.tianwl.com/2019/11/16/浅析order-by工作原理/index/rowid.png">
+<meta property="og:image" content="http://blog.tianwl.com/2019/11/16/浅析order-by工作原理/index/explain2.png">
+<meta property="og:image" content="http://blog.tianwl.com/2019/11/16/浅析order-by工作原理/index/explain3.png">
+<meta property="og:updated_time" content="2020-03-28T13:55:03.330Z">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="浅析order by工作原理">
+<meta name="twitter:description" content="我们平时做业务开发的时候，经常会遇到按照指定字段升序或者降序来取结果的需求。比如一个论坛，要在首页展示最新发表的十个帖子，或者要展示回复量最多的十个帖子等等，排序语句的格式通常是这样的： select * from some_table order by some_field desc limit 10，有时候我们的order by语句执行很快，但是有时候又很慢，今天我们来分析一下order by">
+<meta name="twitter:image" content="http://blog.tianwl.com/2019/11/16/浅析order-by工作原理/index/explain.png">
+
+<link rel="canonical" href="http://blog.tianwl.com/2019/11/16/浅析order-by工作原理/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>浅析order by工作原理 | VINO</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript><!-- hexo-inject:begin --><!-- hexo-inject:end -->
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <!-- hexo-inject:begin --><!-- hexo-inject:end --><div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">VINO</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-fw fa-home"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-fw fa-archive"></i>归档</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post">
+            
+
+  <div class="posts-expand">
+      
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="http://blog.tianwl.com/2019/11/16/浅析order-by工作原理/index.html">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars1.githubusercontent.com/u/3870357?v=3&s=460">
+      <meta itemprop="name" content="Tian Weilong">
+      <meta itemprop="description" content="LOVE wat u do. DO it GREAT.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="VINO">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          浅析order by工作原理
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="fa fa-calendar-o"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2019-11-16 15:22:26" itemprop="dateCreated datePublished" datetime="2019-11-16T15:22:26+08:00">2019-11-16</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="fa fa-folder-o"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/数据库/" itemprop="url" rel="index"><span itemprop="name">数据库</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>我们平时做业务开发的时候，经常会遇到按照指定字段升序或者降序来取结果的需求。比如一个论坛，要在首页展示最新发表的十个帖子，或者要展示回复量最多的十个帖子等等，排序语句的格式通常是这样的： <code>select * from some_table order by some_field desc limit 10</code>，有时候我们的<code>order by</code>语句执行很快，但是有时候又很慢，今天我们来分析一下<code>order by</code>语句的工作原理。</p>
+<a id="more"></a>
+<p>还是以在<a href="/2019/11/06/Mysql给字符串字段加索引的正确姿势/index.html" title="Mysql给字符串字段加索引的正确姿势">Mysql给字符串字段加索引的正确姿势</a>中提到的用户表为例，假设用户表的定义如下（已省略与讨论无关的字段）：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">create table `user` (</span><br><span class="line">    id int auto_increment primary key,</span><br><span class="line">    name varchar(64),</span><br><span class="line">    email varchar(128),</span><br><span class="line">    province varchar(16)</span><br><span class="line">) engine=InnoDB, charset=utf8mb4;</span><br></pre></td></tr></table></figure>
+<p>现在有一个这样的业务场景：需要按<code>name</code>降序取<code>广东省</code>前1000个人的信息。SQL语句可以这么写：<br><figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">select name, email, province from user where province = &apos;广东省&apos; order by name asc limit 1000;</span><br></pre></td></tr></table></figure></p>
+<h3 id="全字段排序"><a href="#全字段排序" class="headerlink" title="全字段排序"></a>全字段排序</h3><p>这个语句比较简单，借助我们之前学过的索引相关的知识，为了避免全表扫描，我们需要在<code>province</code>字段加上索引。然后用<code>explain</code>看一下这个语句的执行情况，如下图：</p>
+<p><img src="/2019/11/16/浅析order-by工作原理/index/explain.png" alt="使用explain命令查看语句执行情况"></p>
+<p><code>Extra</code>这一栏中的<code>Using filesort</code>表示的就是需要排序，Mysql会给每个线程分配一块用于排序的内存，叫做<code>sort_buffer</code>。</p>
+<p>为了说明这个查询语句的执行过程，先来看一下<code>province</code>这个索引的示意图：</p>
+<p><img src="/2019/11/16/浅析order-by工作原理/index/province.png" alt="province字段索引示意图"></p>
+<!-- 
+ZGlncmFwaCBHIHsNCiAgICBmb250bmFtZT0iRmFuZ3NvbmciDQogICAgY29tcG91bmQ9dHJ1ZQ0K
+ICAgIG5ld3Jhbms9dHJ1ZQ0KICAgIGxhYmVsPSJwcm92aW5jZeWtl+autee0ouW8leekuuaEj+Wb
+vlxuXG4iDQogICAgbGFiZWxsb2M9dA0KICAgIA0KICAgIG5vZGVbZm9udG5hbWU9IkZhbmdzb25n
+Il0NCiAgICBlZGdlW2ZvbnRuYW1lPSJGYW5nc29uZyJdDQoNCiAgICBzdWJncmFwaCBjbHVzdGVy
+XzEgew0KICAgICAgICBsYWJlbD0i57Si5byVcHJvdmluY2UiDQogICAgICAgIG4xW3NoYXBlPXJl
+Y29yZCwgbGFiZWw9InsgezxwMT4gfCA8cDI+Jm5ic3A7Jm5ic3A7Jm5ic3A7Jm5ic3A7Jm5ic3A7
+IHw8cDM+IHw8cDQ+Jm5ic3A7Jm5ic3A7Jm5ic3A7Jm5ic3A7Jm5ic3A7IHwgPHA1PiB8IDxwNj4g
+Jm5ic3A7Jm5ic3A7Jm5ic3A7Jm5ic3A7Jm5ic3A7ICB9IH0iXQ0KDQogICAgICAgIG4yW3NoYXBl
+PW5vbmUsIGxhYmVsPTwNCiAgICAgICAgICAgIDx0YWJsZSBib3JkZXI9IjAiIGNlbGxzcGFjaW5n
+PSIwIiBjZWxsYm9yZGVyPSIxIj4NCiAgICAgICAgICAgICAgICA8dHI+DQogICAgICAgICAgICAg
+ICAgICAgIDx0ZCBwb3J0PSJwMSIgPuWuieW+veecgTwvdGQ+DQogICAgICAgICAgICAgICAgICAg
+IDx0ZD7lronlvr3nnIE8L3RkPg0KICAgICAgICAgICAgICAgIDwvdHI+DQogICAgICAgICAgICAg
+ICAgPHRyPg0KICAgICAgICAgICAgICAgICAgICA8dGQ+aWQtMTwvdGQ+DQogICAgICAgICAgICAg
+ICAgICAgIDx0ZD5pZC0yPC90ZD4NCiAgICAgICAgICAgICAgICA8L3RyPg0KICAgICAgICAgICAg
+PC90YWJsZT4NCiAgICAgICAgPl0NCg0KICAgICAgICBuM1tzaGFwZT1ub25lLCBsYWJlbD08DQog
+ICAgICAgICAgICA8dGFibGUgYm9yZGVyPSIwIiBjZWxsc3BhY2luZz0iMCIgY2VsbGJvcmRlcj0i
+MSI+DQogICAgICAgICAgICAgICAgPHRyPg0KICAgICAgICAgICAgICAgICAgICA8dGQgcG9ydD0i
+cDEiID7lub/kuJznnIE8L3RkPg0KICAgICAgICAgICAgICAgICAgICA8dGQ+5bm/5Lic55yBPC90
+ZD4NCiAgICAgICAgICAgICAgICAgICAgPHRkPi4uLjwvdGQ+DQogICAgICAgICAgICAgICAgICAg
+IDx0ZD7lub/kuJznnIE8L3RkPg0KICAgICAgICAgICAgICAgICAgICA8dGQ+5bm/6KW/55yBPC90
+ZD4NCiAgICAgICAgICAgICAgICA8L3RyPg0KICAgICAgICAgICAgICAgIDx0cj4NCiAgICAgICAg
+ICAgICAgICAgICAgPHRkPmlkLXg8L3RkPg0KICAgICAgICAgICAgICAgICAgICA8dGQ+aWQtKHgr
+MSk8L3RkPg0KICAgICAgICAgICAgICAgICAgICA8dGQ+Li4uPC90ZD4NCiAgICAgICAgICAgICAg
+ICAgICAgPHRkPmlkLSh4K24pPC90ZD4NCiAgICAgICAgICAgICAgICAgICAgPHRkPmlkLXk8L3Rk
+Pg0KICAgICAgICAgICAgICAgIDwvdHI+DQogICAgICAgICAgICA8L3RhYmxlPg0KICAgICAgICA+
+XQ0KDQogICAgICAgIG4xOnAxLT5uMjpwMVtjb2xvcj1ncmVlbl0NCiAgICAgICAgbjE6cDMtPm4z
+OnAxW2NvbG9yPWdyZWVuXQ0KICAgIH0NCn0=
+ -->
+<p>图中满足province=’广东省’条件的行是从<code>id-x</code>到<code>id-(x+n)</code>的这些行。这个语句的执行流程如下：</p>
+<ul>
+<li>初始化<code>sort_buffer</code>，确定放入<code>name</code>、<code>email</code>、<code>province</code>这三个字段。</li>
+<li>从索引<code>province</code>找到第一个满足province=’广东省’条件的主键id，即<code>id-x</code>。</li>
+<li>到主键索引取出主键为<code>id-x</code>的整行数据，将<code>name</code>、<code>email</code> 、<code>province</code>三个字段的值，存入<code>sort_buffer</code>中。</li>
+<li>从索引<code>province</code>取下一个满足条件的主键id，重复上一步，直到<code>province</code>的值不满足条件为止。即遇到主键为<code>id-y</code>的记录为止。</li>
+<li>对<code>sort_buffer</code>中的数据按照字段<code>name</code>做快速排序。</li>
+<li>按照排序结果取前1000行返回给客户端。</li>
+</ul>
+<p>我们暂时先把上面这个过程叫做全字段排序，执行流程的示意图如下：</p>
+<p><img src="/2019/11/16/浅析order-by工作原理/index/all.png" alt="全字段排序示意图"></p>
+<!-- 
+ZGlncmFwaCBHIHsNCiAgICBmb250bmFtZT0iRmFuZ3NvbmciDQogICAgY29tcG91bmQ9dHJ1ZQ0K
+ICAgIG5ld3Jhbms9dHJ1ZQ0KICAgIGxhYmVsPSLlhajlrZfmrrXmjpLluo/mtYHnqItcblxuIg0K
+ICAgIGxhYmVsbG9jPXQNCiAgICBub2Rlc2VwPTENCiAgICANCiAgICBub2RlW2ZvbnRuYW1lPSJG
+YW5nc29uZyJdDQogICAgZWRnZVtmb250bmFtZT0iRmFuZ3NvbmciXQ0KDQogICAgc3ViZ3JhcGgg
+Y2x1c3RlcjEgew0KICAgICAgICBsYWJlbD0icHJvdmluY2XntKLlvJUiDQogICAgICAgIG4xW3No
+YXBlPXJlY29yZCxsYWJlbD0ieyB7IOW5v+S4nOecgSB8IDxwMT4gaWQteH0gfCB7ICZuYnNwOyZu
+YnNwO+W5v+S4nOecgSZuYnNwOyZuYnNwOyB8IDxwMj4gaWQtKHgrMSl9IHwgeyAmbmJzcDsuLi4m
+bmJzcDsgfCA8cDM+IC4uLn0gfCB7ICZuYnNwOyZuYnNwO+W5v+S4nOecgSZuYnNwOyZuYnNwOyB8
+IDxwND4gaWQtKHgrbil9fSAiXQ0KICAgIH0NCg0KICAgIHN1YmdyYXBoIGNsdXN0ZXIyIHsNCiAg
+ICAgICAgbGFiZWw9IuS4u+mUrue0ouW8lSINCiAgICAgICAgbjJbc2hhcGU9cmVjb3JkLGxhYmVs
+PSJ7e2lkIHwgcHJvdmluY2UgfCBuYW1lIHwgZW1haWwgfSB8IHsgLi4uIH0gfCB7IDxwMz4gLi4u
+IH18IHsgLi4uIH0gfSJdDQogICAgfQ0KDQogICAgc3ViZ3JhcGggY2x1c3RlcjMgew0KICAgICAg
+ICBsYWJlbD0ic29ydF9idWZmZXIobmFtZeaXoOW6jykiDQogICAgICAgIG4zW3NoYXBlPXJlY29y
+ZCxsYWJlbD0ie3sgcHJvdmluY2UgfCBuYW1lIHwgZW1haWwgfSB8IHsgLi4uIH0gfCB7IDxwMz4g
+Li4uIH18IHsgLi4uIH0gfSJdDQogICAgfQ0KDQogICAgc3ViZ3JhcGggY2x1c3RlcjQgew0KICAg
+ICAgICBsYWJlbD0ic29ydF9idWZmZXIobmFtZeacieW6jykiDQogICAgICAgIG40W3NoYXBlPXJl
+Y29yZCxsYWJlbD0ie3sgcHJvdmluY2UgfCBuYW1lIHwgZW1haWwgfSB8IHsgLi4uIH0gfCB7IDxw
+Mz4gLi4uIH18IHsgLi4uIH0gfSJdDQogICAgfQ0KDQogICAgc3ViZ3JhcGggY2x1c3RlcjUgew0K
+ICAgICAgICBsYWJlbD0i57uT5p6c6ZuGIg0KICAgICAgICBuNVtzaGFwZT1yZWNvcmQsbGFiZWw9
+Int7IHByb3ZpbmNlIHwgbmFtZSB8IGVtYWlsIH0gfCB7IC4uLiB9IHwgeyA8cDM+IC4uLiB9fCB7
+IC4uLiB9IH0iXQ0KICAgIH0NCg0KICAgIG4xOnAxLT5uMjp3DQogICAgbjE6cDItPm4yOnAzDQog
+ICAgbjE6cDMtPm4yOnAzDQogICAgbjE6cDQtPm4yOnAzDQoNCiAgICBuMjpwMy0+bjM6cDMNCg0K
+ICAgIG42LT5uNDpwMw0KICAgIG40OnAzLT5uNTpwMw0KDQogICAgbjEtPm42DQoNCiAgICB7cmFu
+az1zYW1lIG4xIG4yIG4zfQ0KICAgIHtyYW5rPXNhbWUgbjQgbjUgbjZ9DQp9
+ -->
+<p>图中<code>按name排序</code>这个步骤，可能在内存中完成，也可能需要使用外部排序，这取决于排序所需的内存和参数<code>sort_buffer_size</code>的值。这个值就是<code>sort_buffer</code>的大小。如果要排序的数据量小于该值，排序就在内存中完成。如果排序的数据量太大，内存放不下，就不得不利用磁盘临时文件辅助排序。</p>
+<!-- 
+delimiter ;;
+create procedure seed_user()
+begin
+  declare i int;
+  declare r int;
+  declare province char(10) character set utf8;
+  set i=1;
+
+
+  while(i <= 50000) do
+    set r=floor(rand() * 5);
+
+    if r=1  then
+      set province='广东省';
+    elseif r=2 then
+      set province='安徽省';
+    elseif r=3 then
+      set province='广西省';
+    elseif r=4 then
+      set province='福建省';
+    else
+      set province='广东省';
+    end if;
+
+    insert into user (id, `province`, name, email) values (i, province, substring(MD5(RAND()),1,10), concat(substring(MD5(RAND()),1,10), '@qq.com'));
+    set i=i+1;
+  end while;
+end;;
+delimiter ;
+ -->
+<p>可以使用下面的方法，来确定一个排序语句是否使用了临时文件:<br><figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"></span><br><span class="line">/* 打开optimizer_trace，只对本线程有效 */</span><br><span class="line">SET optimizer_trace=&apos;enabled=on&apos;; </span><br><span class="line"></span><br><span class="line">/* @a保存Innodb_rows_read的初始值 */</span><br><span class="line">select VARIABLE_VALUE into @a from  performance_schema.session_status where variable_name = &apos;Innodb_rows_read&apos;;</span><br><span class="line"></span><br><span class="line">/* 执行语句 */</span><br><span class="line">select name, email, province from user where province = &apos;广东省&apos; order by name asc limit 1000;</span><br><span class="line"></span><br><span class="line">/* 查看 OPTIMIZER_TRACE 输出 */</span><br><span class="line">SELECT * FROM `information_schema`.`OPTIMIZER_TRACE`\G</span><br><span class="line"></span><br><span class="line">/* @b保存Innodb_rows_read的当前值 */</span><br><span class="line">select VARIABLE_VALUE into @b from performance_schema.session_status where variable_name = &apos;Innodb_rows_read&apos;;</span><br><span class="line"></span><br><span class="line">/* 计算Innodb_rows_read差值 */</span><br><span class="line">select @b-@a;</span><br></pre></td></tr></table></figure></p>
+<p>截取一部分<code>OPTIMIZER_TRACE</code>的输出如下：<br><figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">&quot;filesort_summary&quot;: &#123;</span><br><span class="line">    &quot;rows&quot;: 20005,</span><br><span class="line">    &quot;examined_rows&quot;: 20005,</span><br><span class="line">    &quot;number_of_tmp_files&quot;: 15,</span><br><span class="line">    &quot;sort_buffer_size&quot;: 261928,</span><br><span class="line">    &quot;sort_mode&quot;: &quot;&lt;sort_key, packed_additional_fields&gt;&quot;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure></p>
+<p><code>number_of_tmp_files</code>表示的是，排序过程中使用的临时文件数。在这个查询中，Mysql将需要排序的数据分成15份，每一份单独排序后存在这些临时文件中，然后把这15个有序文件再合并成一个有序的大文件。</p>
+<p>如果<code>sort_buffer_size</code>超过了需要排序的数据量的大小，<code>number_of_tmp_files</code>就是0，表示排序可以在内存中完成。</p>
+<h3 id="rowid-排序"><a href="#rowid-排序" class="headerlink" title="rowid 排序"></a>rowid 排序</h3><p>上面的算法过程中，如果查询要返回的字段很多（或者包含大字段）的话，内存里能够同时放下的行数很少，要分成很多个临时文件，排序的性能会很差。</p>
+<p>当Mysql认为单行的长度太大的时候，就不会使用上面的<code>全字段排序</code>算法。我们通过修改参数<code>max_length_for_sort_data</code>来人为地让Mysql采用另外一种算法：<br><figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">set max_length_for_sort_data = 10;</span><br></pre></td></tr></table></figure></p>
+<p>这个语句的意思是，当单行的数据长度超过10时，就采用另外的排序算法。新的算法放入<code>sort_buffer</code>的字段，只有要排序的列（即name字段）和主键id。但这时，排序的结果就因为少了<code>province</code>和<code>email</code>字段的值，不能直接返回了，整个执行流程如下：</p>
+<ul>
+<li>初始化<code>sort_buffer</code>，确定放入两个字段<code>name</code>和<code>id</code>。</li>
+<li>从索引<code>province</code>找到第一个满足province=’广东省’条件的主键id，即<code>id-x</code>。</li>
+<li>到主键索引取出主键为<code>id-x</code>的整行数据，将<code>name</code>、<code>id</code>两个字段的值，存入<code>sort_buffer</code>中。</li>
+<li>从索引<code>province</code>取下一个满足条件的主键id，重复上一步，直到<code>province</code>的值不满足条件为止。即遇到主键为<code>id-y</code>的记录为止。</li>
+<li>对<code>sort_buffer</code>中的数据按照字段<code>name</code>做快速排序。</li>
+<li>遍历排序结果，取前1000行，并按照id的值返回原表中取出<code>province</code>、<code>email</code>、<code>name</code>三个字段返回给客户端。</li>
+</ul>
+<p>这个执行流程的示意图如下，暂且称它为<code>rowid 排序</code>：</p>
+<p><img src="/2019/11/16/浅析order-by工作原理/index/rowid.png" alt="rowid排序流程示意图"></p>
+<!--
+ZGlncmFwaCBHIHsNCiAgICBmb250bmFtZT0iRmFuZ3NvbmciDQogICAgY29tcG91bmQ9dHJ1ZQ0K
+ICAgIG5ld3Jhbms9dHJ1ZQ0KICAgIGxhYmVsPSJyb3dpZCDmjpLluo/mtYHnqItcblxuIg0KICAg
+IGxhYmVsbG9jPXQNCiAgICBub2Rlc2VwPTENCiAgICANCiAgICBub2RlW2ZvbnRuYW1lPSJGYW5n
+c29uZyJdDQogICAgZWRnZVtmb250bmFtZT0iRmFuZ3NvbmciXQ0KDQogICAgc3ViZ3JhcGggY2x1
+c3RlcjEgew0KICAgICAgICBsYWJlbD0icHJvdmluY2XntKLlvJUiDQogICAgICAgIG4xW3NoYXBl
+PXJlY29yZCxsYWJlbD0ieyB7IOW5v+S4nOecgSB8IDxwMT4gaWQteH0gfCB7ICZuYnNwOyZuYnNw
+O+W5v+S4nOecgSZuYnNwOyZuYnNwOyB8IDxwMj4gaWQtKHgrMSl9IHwgeyAmbmJzcDsuLi4mbmJz
+cDsgfCA8cDM+IC4uLiB9IHwgeyAmbmJzcDsmbmJzcDvlub/kuJznnIEmbmJzcDsmbmJzcDsgfCA8
+cDQ+IGlkLSh4K24pfX0gIl0NCiAgICB9DQoNCiAgICBzdWJncmFwaCBjbHVzdGVyMiB7DQogICAg
+ICAgIGxhYmVsPSLkuLvplK7ntKLlvJUiDQogICAgICAgIG4yW3NoYXBlPXJlY29yZCxsYWJlbD0i
+e3sgPHAwPiBpZCB8IHByb3ZpbmNlIHwgbmFtZSB8IGVtYWlsIH0gfCB7IC4uLiB9IHwgeyA8cDM+
+IC4uLiB9fCB7IC4uLiB9IH0iXQ0KICAgIH0NCg0KICAgIHN1YmdyYXBoIGNsdXN0ZXIzIHsNCiAg
+ICAgICAgbGFiZWw9InNvcnRfYnVmZmVyKG5hbWXml6Dluo8pIg0KICAgICAgICBuM1tzaGFwZT1y
+ZWNvcmQsbGFiZWw9Int7IGlkIHwgbmFtZSB9IHwgeyAuLi4gfSB8IHsgPHAzPiAuLi4gfXwgeyAu
+Li4gfSB9Il0NCiAgICB9DQoNCiAgICBzdWJncmFwaCBjbHVzdGVyNCB7DQogICAgICAgIGxhYmVs
+PSJzb3J0X2J1ZmZlcihuYW1l5pyJ5bqPKSINCiAgICAgICAgbjRbc2hhcGU9cmVjb3JkLGxhYmVs
+PSJ7eyBpZCB8IG5hbWUgfXwgeyAuLi4gfSB8IHsgPHAzPiAuLi4gfXwgeyAuLi4gfSB9Il0NCiAg
+ICB9DQoNCiAgICBzdWJncmFwaCBjbHVzdGVyNyB7DQogICAgICAgIGxhYmVsPSLkuLvplK7ntKLl
+vJUiDQogICAgICAgIG43W3NoYXBlPXJlY29yZCxsYWJlbD0ie3sgPHAwPiBpZCB8IHByb3ZpbmNl
+IHwgbmFtZSB8IGVtYWlsIH0gfCB7IC4uLiB9IHwgeyA8cDM+IC4uLiB9fCB7IC4uLiB9IH0iXQ0K
+ICAgIH0gICAgDQoNCiAgICBzdWJncmFwaCBjbHVzdGVyNSB7DQogICAgICAgIGxhYmVsPSLnu5Pm
+npzpm4YiDQogICAgICAgIG41W3NoYXBlPXJlY29yZCxsYWJlbD0ie3sgcHJvdmluY2UgfCBuYW1l
+IHwgZW1haWwgfSB8IHsgLi4uIH0gfCB7IDxwMz4gLi4uIH18IHsgLi4uIH0gfSJdDQogICAgfQ0K
+DQoNCg0KICAgIG4xLT5uMltsaGVhZD1jbHVzdGVyMiwgbHRhaWw9Y2x1c3RlcjEsIGNvbG9yPWdy
+ZWVuLCBsYWJlbD0i5Zue6KGoIiwgZm9udGNvbG9yPSJibHVlIl0NCiAgICBuMi0+bjNbbGhlYWQ9
+Y2x1c3RlcjMsIGx0YWlsPWNsdXN0ZXIyLCBjb2xvcj1ncmVlbiwgbGFiZWw9IuWPluWAvCIsIGZv
+bnRjb2xvcj0iYmx1ZSJdDQoNCiAgICBuNltzdHlsZT1pbnZpc10NCiAgICBuMy0+bjYgW2x0YWls
+PWNsdXN0ZXIzLCBjb2xvcj1ncmVlbiwgbGFiZWw9IuaMiW5hbWXmjpLluo8iLCBmb250Y29sb3I9
+ImJsdWUiXQ0KICAgIG40LT5uNyBbbGhlYWQ9Y2x1c3RlcjcsIGx0YWlsPWNsdXN0ZXI0LCBjb2xv
+cj1ncmVlbiwgbGFiZWw9IuWbnuihqCIsIGZvbnRjb2xvcj0iYmx1ZSJdDQogICAgbjctPm41IFts
+aGVhZD1jbHVzdGVyNSwgbHRhaWw9Y2x1c3RlcjQsIGNvbG9yPSJncmVlbiIsIGxhYmVsPSLlj5bl
+gLwiLCBmb250Y29sb3I9ImJsdWUiXQ0KDQogICAgbjEtPm40W3N0eWxlPWludmlzXQ0KICAgIHty
+YW5rPXNhbWUgbjEgbjIgbjMgbjZ9DQogICAge3Jhbms9c2FtZSBuNCBuNSBuN30NCn0= 
+ -->
+<p>对比全字段排序的流程图可以看到，这里的排序多访问了一次主键索引。再截取一部分<code>OPTIMIZER_TRACE</code>的输出如下：<br><figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">&quot;filesort_summary&quot;: &#123;</span><br><span class="line">    &quot;rows&quot;: 1001,</span><br><span class="line">    &quot;examined_rows&quot;: 20005,</span><br><span class="line">    &quot;number_of_tmp_files&quot;: 0,</span><br><span class="line">    &quot;sort_buffer_size&quot;: 141144,</span><br><span class="line">    &quot;sort_mode&quot;: &quot;&lt;sort_key, rowid&gt;&quot;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure></p>
+<p><code>examined_rows</code>还是20005行，表示用于排序的数据是20005行。但是<code>select @b - @a</code>这个语句比前面的值增加了1000。这是因为除了排序过程外，在排序完成后，还要根据id去原表取值，由于语句是limit 1000，因此会多读1000行。</p>
+<p>看完这两种算法，你会发现，在Mysql中做排序是一个成本比较高的操作。是不是所有的<code>order by</code>语句都需要做排序呢？从上面两种排序算法的流程分析中不难发现，之所以要生成临时表，并且在临时表上做排序操作，其原因是原来的数据都是无序的。可以设想一下，假如能够保证从<code>province</code>这个索引上取出来的行，天然就是按照<code>name</code>升序排列的，是不是就可以不用排序了？确实是这样的，因此我们可以通过建立联合索引(<code>province</code>, <code>name</code>)来让相同省份的<code>name</code>升序排列。 我们再来看一下执行计划：</p>
+<p><img src="/2019/11/16/浅析order-by工作原理/index/explain2.png" alt="使用explain查看联合索引执行计划"></p>
+<p>从上图中可以看到，<code>Extra</code>这一栏中已经没有<code>Using filesort</code>了，也就是不需要排序了。而且由于(<code>province</code>, <code>name</code>)这个联合索引本身有序，这个查询也不用把20005行全部都读一遍，只要找到满足条件的前1000条记录就可以退出了。</p>
+<p>更进一步，由于我们需要查询的字段有三个<code>province</code>、<code>name</code> 和 <code>email</code>，而联合索引(<code>province</code>, <code>name</code>)上只有两个字段，不可避免需要回表查<code>email</code>字段的值，如果我们将联合索引改为(<code>province</code>, <code>name</code>, <code>email</code>)会是怎样的情况呢？请看如下的执行计划:</p>
+<p><img src="/2019/11/16/浅析order-by工作原理/index/explain3.png" alt="使用explain查看执行计划"></p>
+<p>可以看到，<code>Extra</code>这一栏多了<code>Using index</code>，表示使用了覆盖索引，无需再回表了，性能上又快了一些。</p>
+<p>当然，索引的维护也是有代价的，并不是说每个查询都要用上覆盖索引，这需要我们在开发中根据实际情况进行权衡。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/mysql/" rel="tag"># mysql</a>
+              <a href="/tags/排序/" rel="tag"># 排序</a>
+              <a href="/tags/sort-buffer/" rel="tag"># sort_buffer</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2019/11/13/你的count语句为何越来越慢/index.html" rel="prev" title="你的count语句为何越来越慢">
+      <i class="fa fa-chevron-left"></i> 你的count语句为何越来越慢
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2019/11/17/Mysql获取随机记录的正确姿势/index.html" rel="next" title="Mysql获取随机记录的正确姿势">
+      Mysql获取随机记录的正确姿势 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+  </div>
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-3"><a class="nav-link" href="#全字段排序"><span class="nav-number">1.</span> <span class="nav-text">全字段排序</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#rowid-排序"><span class="nav-number">2.</span> <span class="nav-text">rowid 排序</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Tian Weilong"
+      src="https://avatars1.githubusercontent.com/u/3870357?v=3&s=460">
+  <p class="site-author-name" itemprop="name">Tian Weilong</p>
+  <div class="site-description" itemprop="description">LOVE wat u do. DO it GREAT.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">20</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/categories/">
+        <span class="site-state-item-count">4</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+        <span class="site-state-item-count">36</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2020</span>
+  <span class="with-love">
+    <i class="fa fa-user"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Tian Weilong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+<script src="/js/utils.js"></script><script src="/js/motion.js"></script>
+<script src="/js/schemes/muse.js"></script>
+<script src="/js/next-boot.js"></script><!-- hexo-inject:begin --><!-- hexo-inject:end -->
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

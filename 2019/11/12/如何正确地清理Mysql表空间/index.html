@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <!-- hexo-inject:begin --><!-- hexo-inject:end --><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 3.9.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/font-awesome.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"blog.tianwl.com","root":"/","scheme":"Muse","version":"7.7.2","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="最近想对一个数据量超过2G的业务表做清理，删除了差不多一半的不活跃数据，但是再查看表文件时发现表文件的大小几乎没有变化，这到底是为什么呢？今天我们一起来看一下这个问题。">
+<meta name="keywords" content="mysql,表空间">
+<meta property="og:type" content="article">
+<meta property="og:title" content="如何正确地清理Mysql表空间">
+<meta property="og:url" content="http://blog.tianwl.com/2019/11/12/如何正确地清理Mysql表空间/index.html">
+<meta property="og:site_name" content="VINO">
+<meta property="og:description" content="最近想对一个数据量超过2G的业务表做清理，删除了差不多一半的不活跃数据，但是再查看表文件时发现表文件的大小几乎没有变化，这到底是为什么呢？今天我们一起来看一下这个问题。">
+<meta property="og:locale" content="zh-CN">
+<meta property="og:image" content="http://blog.tianwl.com/2019/11/12/如何正确地清理Mysql表空间/index/index.png">
+<meta property="og:image" content="http://blog.tianwl.com/2019/11/12/如何正确地清理Mysql表空间/index/split.png">
+<meta property="og:image" content="http://blog.tianwl.com/2019/11/12/如何正确地清理Mysql表空间/index/altertableddl.png">
+<meta property="og:updated_time" content="2020-03-28T13:55:03.326Z">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="如何正确地清理Mysql表空间">
+<meta name="twitter:description" content="最近想对一个数据量超过2G的业务表做清理，删除了差不多一半的不活跃数据，但是再查看表文件时发现表文件的大小几乎没有变化，这到底是为什么呢？今天我们一起来看一下这个问题。">
+<meta name="twitter:image" content="http://blog.tianwl.com/2019/11/12/如何正确地清理Mysql表空间/index/index.png">
+
+<link rel="canonical" href="http://blog.tianwl.com/2019/11/12/如何正确地清理Mysql表空间/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>如何正确地清理Mysql表空间 | VINO</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript><!-- hexo-inject:begin --><!-- hexo-inject:end -->
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <!-- hexo-inject:begin --><!-- hexo-inject:end --><div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">VINO</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-fw fa-home"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-fw fa-archive"></i>归档</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post">
+            
+
+  <div class="posts-expand">
+      
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="http://blog.tianwl.com/2019/11/12/如何正确地清理Mysql表空间/index.html">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars1.githubusercontent.com/u/3870357?v=3&s=460">
+      <meta itemprop="name" content="Tian Weilong">
+      <meta itemprop="description" content="LOVE wat u do. DO it GREAT.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="VINO">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          如何正确地清理Mysql表空间
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="fa fa-calendar-o"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2019-11-12 21:47:56" itemprop="dateCreated datePublished" datetime="2019-11-12T21:47:56+08:00">2019-11-12</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="fa fa-folder-o"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/数据库/" itemprop="url" rel="index"><span itemprop="name">数据库</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>最近想对一个数据量超过2G的业务表做清理，删除了差不多一半的不活跃数据，但是再查看表文件时发现表文件的大小几乎没有变化，这到底是为什么呢？今天我们一起来看一下这个问题。</p>
+<a id="more"></a>
+<p>我们知道，一个InnoDB表包含两部分： 表结构定义和表数据，因为表结构定义占用的空间很小，我们先忽略，主要讨论表数据。</p>
+<p>表数据既可以存放在共享表空间里，也可以是单独的文件。当参数<code>innodb_file_per_table</code> 设置为<code>ON</code>时，表示每个表数据存储在一个以<code>.ibd</code>为后缀的文件中。这也是Mysql 5.6.6版本开始的默认设置。设置为<code>ON</code>时有一个好处，就是在drop table的时候，系统会直接删除这个文件，而如果是存放在共享表空间里，即使表删掉了，空间也不会被回收。所以接下来的讨论都基于这个设置为<code>ON</code>的前提展开。</p>
+<h3 id="数据删除流程"><a href="#数据删除流程" class="headerlink" title="数据删除流程"></a>数据删除流程</h3><p>在<a href="/2019/10/28/Mysql索引学习笔记/index.html" title="Mysql索引学习笔记">Mysql索引学习笔记</a>一文中提到过，InnoDB里的数据都是用B+树的结构组织的。如下图所示：</p>
+<p><img src="/2019/11/12/如何正确地清理Mysql表空间/index/index.png" alt="InnoDB索引示意图"></p>
+<!-- 
+ ZGlncmFwaCBHIHsNCiAgICBmb250bmFtZT0iRmFuZ3NvbmciDQogICAgY29tcG91bmQ9dHJ1ZQ0K
+ICAgIG5ld3Jhbms9dHJ1ZQ0KICAgIGxhYmVsPSJJbm5vRELntKLlvJXnpLrmhI/lm74iDQogICAg
+bGFiZWxsb2M9dA0KICAgIA0KICAgIG5vZGVbZm9udG5hbWU9IkZhbmdzb25nIl0NCiAgICBlZGdl
+W2ZvbnRuYW1lPSJGYW5nc29uZyJdDQogICAgDQogICAgc3ViZ3JhcGggY2x1c3RlcjAgew0KICAg
+ICAgICBsYWJlbCA9ICLkuLvplK7ntKLlvJUoaWQpIg0KICAgICAgICBuMSBbc2hhcGU9cmVjb3Jk
+LCBsYWJlbD0iPHAwPiB8IDxwMT4gNDAwIHwgPHAyPiB8IDxwMz4gNzAwIHwgPHA0PiB8IDxwNT4g
+Jm5ic3A7Jm5ic3A7Jm5ic3A7Jm5ic3A7Jm5ic3A7Il0NCg0KICAgICAgICBuMiBbc2hhcGU9cmVj
+b3JkLCBsYWJlbD0iezxwMD4gMTAwIHwge3tpZCB8IGFnZX0gfCB7MTAwIHwgMTd9fX0gfCB7MjAw
+IHwge3tpZCB8IGFnZX0gfCB7MjAwIHwgMjB9fX0iXQ0KDQogICAgICAgIHN1YmdyYXBoIGNsdXN0
+ZXIxIHsNCiAgICAgICAgICAgIGxhYmVsPSJQYWdlIDEiDQogICAgICAgICAgICBjb2xvcj1ibHVl
+DQogICAgICAgICAgICBzdHlsZT1kYXNoZWQNCg0KICAgICAgICAgICAgbjMgW3NoYXBlPXJlY29y
+ZCwgbGFiZWw9Ins8cDA+IDQwMCB8IHt7aWQgfCBhZ2V9IHwgezQwMCB8IDE4fX19IHwgezUwMCB8
+IHt7aWQgfCBhZ2V9IHwgezUwMCB8IDE5fX19IHwgezYwMCB8IHt7aWQgfCBhZ2V9IHwgezYwMCB8
+IDIxfX19Il0NCg0KICAgICAgICB9DQogICAgICAgIG4xOnAwIC0+IG4yOnAwDQogICAgICAgIG4x
+OnAyIC0+IG4zOnAwDQogICAgfQ0KfQ==
+ -->
+<p>假如现在要删除id=500这条记录，InnoDB引擎只会把这个记录标记为删除，如果后续要再插入一个id在400到600之间的记录时，可能会复用这个位置，但是磁盘文件的大小并不会缩小。</p>
+<p>由于InnoDB的数据是按页存储的，如果删掉了一个数据页上的所有记录，那么整个数据页就可以被复用了。和记录的复用不同的是，记录的复用仅限于指定范围的数据（如id=400到id=600之间），而数据页可以复用到任何位置。</p>
+<p>一种极端的情况，如果使用delete命令把这个表的数据删除，那么所有的数据页都会被标记为可复用。但是在磁盘上，文件不会变小。也就是说，通过delete命令是不能清理表空间的。这些可以复用又没有被使用的空间，看起来就像是“空洞”。</p>
+<p>实际上，除了删除数据会造成空洞，插入数据也会。还是用上面那个图，假如<code>Page 1</code>已经满了，这时要再插入一行id=550的数据，会怎么样呢？</p>
+<p><img src="/2019/11/12/如何正确地清理Mysql表空间/index/split.png" alt="插入数据导致页分裂"></p>
+<!-- ZGlncmFwaCBHIHsNCiAgICBmb250bmFtZT0iRmFuZ3NvbmciDQogICAgY29tcG91bmQ9dHJ1ZQ0K
+ICAgIG5ld3Jhbms9dHJ1ZQ0KICAgIGxhYmVsPSJJbm5vRELntKLlvJXnpLrmhI/lm74iDQogICAg
+bGFiZWxsb2M9dA0KICAgIA0KICAgIG5vZGVbZm9udG5hbWU9IkZhbmdzb25nIl0NCiAgICBlZGdl
+W2ZvbnRuYW1lPSJGYW5nc29uZyJdDQogICAgDQogICAgc3ViZ3JhcGggY2x1c3RlcjAgew0KICAg
+ICAgICBsYWJlbCA9ICLkuLvplK7ntKLlvJUoaWQpIg0KICAgICAgICBuMSBbc2hhcGU9cmVjb3Jk
+LCBsYWJlbD0iPHAwPiB8IDxwMT4gNDAwIHwgPHAyPnwgPHA2PiA1NTAgfCA8cDc+ICB8IDxwMz4g
+NzAwIHwgPHA0PiB8IDxwNT4gJm5ic3A7Jm5ic3A7Jm5ic3A7Jm5ic3A7Jm5ic3A7Il0NCg0KICAg
+ICAgICBuMiBbc2hhcGU9cmVjb3JkLCBsYWJlbD0iezxwMD4gMTAwIHwge3tpZCB8IGFnZX0gfCB7
+MTAwIHwgMTd9fX0gfCB7MjAwIHwge3tpZCB8IGFnZX0gfCB7MjAwIHwgMjB9fX0iXQ0KDQogICAg
+ICAgIHN1YmdyYXBoIGNsdXN0ZXIxIHsNCiAgICAgICAgICAgIGxhYmVsPSJQYWdlIDEiDQogICAg
+ICAgICAgICBjb2xvcj1ibHVlDQogICAgICAgICAgICBzdHlsZT1kYXNoZWQNCg0KICAgICAgICAg
+ICAgbjMgW3NoYXBlPXJlY29yZCwgbGFiZWw9Ins8cDA+IDQwMCB8IHt7aWQgfCBhZ2V9IHwgezQw
+MCB8IDE4fX19IHwgezUwMCB8IHt7aWQgfCBhZ2V9IHwgezUwMCB8IDE5fX19IHwgeyAgfCB7eyAg
+fCAgfSB8IHsgIHwgIH19fSJdDQoNCiAgICAgICAgfQ0KDQogICAgICAgIHN1YmdyYXBoIGNsdXN0
+ZXIyIHsNCiAgICAgICAgICAgIGxhYmVsPSJQYWdlIDIiDQogICAgICAgICAgICBjb2xvcj1ibHVl
+DQogICAgICAgICAgICBzdHlsZT1kYXNoZWQNCg0KICAgICAgICAgICAgbjQgW3NoYXBlPXJlY29y
+ZCwgbGFiZWw9Ins8cDA+IDU1MCB8IHt7aWQgfCBhZ2V9IHwgezU1MCB8IDIyfX19IHwgezYwMCB8
+IHt7aWQgfCBhZ2V9IHwgezYwMCB8IDIxfX19IHwgeyAgfCB7eyAgfCAgfSB8IHsgIHwgIH19fSJd
+DQoNCiAgICAgICAgfQ0KICAgICAgICBuMTpwMCAtPiBuMjpwMA0KICAgICAgICBuMTpwMiAtPiBu
+MzpwMA0KDQogICAgICAgIG4xOnA3IC0+IG40OnAwDQogICAgfQ0KfQ== -->
+<p>从上图可以看出，由于<code>Page 1</code>已经满了 ，再插入一个id是550的数据使，就必须申请一个新的页面<code>Page 2</code>来保存数据，这样<code>Page 1</code>的末尾就留下了空洞。</p>
+<p>另外，更新索引上的值，可以理解为删除一个旧的值，再插入一个新的值，这也是会造成空洞的。</p>
+<p>也就是说，经过大量增删改的表，都可能是存在空洞的，所以必须把这些空洞去掉，才能达到清理表空间的目的。</p>
+<h3 id="重建表"><a href="#重建表" class="headerlink" title="重建表"></a>重建表</h3><p>假如有一个表，它里面所有的数据都是按照主键id递增的顺序插入的，那么理论上这个表上不会存在空洞。这就给我们一个启示，我们可以把一个有空洞的表的数据，按照主键id递增的顺序插入到表结构相同的另一张表中，然后用另一张表替换有空洞的表，是不是就起到了清理表空间的作用？</p>
+<p>实际上，在Mysql中，有一个命令<code>alter table user engine=InnoDB</code>能起到类似的作用，不同的是，这个命令不需要手动创建同结构的中间表，mysql会自动完成转存数据、交换表名、删除旧表的操作。在Mysql 5.5版本之前，这个命令的执行流程大致如下图所示：</p>
+<p><img src="/2019/11/12/如何正确地清理Mysql表空间/index/altertableddl.png" alt="改锁表DDL"></p>
+<!-- 
+digraph G {
+    fontname="Fangsong"
+    compound=true
+    newrank=true
+    label="Mysql 5.5 改锁表DDL"
+    labelloc=t
+    nodesep=0.8
+
+    node[fontname="Fangsong"]
+    edge[fontname="Fangsong"]
+
+    subgraph cluster1 {
+        label="state 1"
+        color=green
+        style=dashed
+        subgraph cluster11 {
+            label="表A"
+            style=""
+            color=""
+            n1[shape=record, label="{R1|R2| | R3 | R4 | | | R5 | R6 }", height=3]
+        }
+    }
+
+    subgraph cluster2 {
+        label="state 2"
+        color=green
+        style=dashed
+        subgraph cluster22 {
+            label="表tmp"
+            style=""
+            color=""
+            n3[shape=record, label="{R1|R2|R3 | R4 | R5 | R6 }", height=3]
+        }
+        subgraph cluster21 {
+            label="表A"
+            style=""
+            color=""
+            n2[shape=record, label="{R1|R2| | R3 | R4 | | | R5 | R6 }", height=3]
+        }
+
+
+    }
+
+    subgraph cluster3 {
+        label="state 3"
+        color=green
+        style=dashed
+
+
+        subgraph cluster32 {
+            label="表A"
+            style=""
+            color=""
+            n5[shape=record, label="{R1|R2|R3 | R4 | R5 | R6 }", height=3]
+        }
+
+        subgraph cluster31 {
+            label="表tmp"
+            style=""
+            color=""
+            n4[shape=record, label="{R1|R2| | R3 | R4 | | | R5 | R6 }", height=3]
+        }
+    }
+
+    subgraph cluster4 {
+        label="state 4"
+        color=green
+        style=dashed
+        subgraph cluster41 {
+            label="表A"
+            style=""
+            color=""
+            n6[shape=record, label="{R1|R2|R3 | R4 | R5 | R6 }", height=3]
+        }
+    }
+
+    {rank=same n1 n2 n3 n4 n5 n6}
+
+}
+ -->
+<p>显然花时间最多的步骤是<code>state 2</code>中往表tmp中插入数据的过程，如果在这个过程中有新的数据要写入表A的话，就会造成数据丢失，也就是说，这个DDL不是<code>Online</code>的。</p>
+<p>而在Mysql 5.6版本开始引入了<code>Online DDL</code>，它对<code>state 2</code>往表tmp插入数据的过程做了一些优化，在这个过程中它生成了一个日志文件(row log)，这个日志文件记录的是在插入数据过程中所有对A表的操作。在临时表插入完成以后，再将日志文件中的操作应用到临时文件，得到一个逻辑数据上与表A相同的数据文件。</p>
+<p>需要注意的是，上面的重建方法都会扫描原表数据和构建临时文件。对于很大的表来说，这个操作是很消耗服务器资源的，因此要很小心地控制操作时间，尽量不要影响到线上服务正常运行。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/mysql/" rel="tag"># mysql</a>
+              <a href="/tags/表空间/" rel="tag"># 表空间</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2019/11/06/Mysql给字符串字段加索引的正确姿势/index.html" rel="prev" title="Mysql给字符串字段加索引的正确姿势">
+      <i class="fa fa-chevron-left"></i> Mysql给字符串字段加索引的正确姿势
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2019/11/13/你的count语句为何越来越慢/index.html" rel="next" title="你的count语句为何越来越慢">
+      你的count语句为何越来越慢 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+  </div>
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-3"><a class="nav-link" href="#数据删除流程"><span class="nav-number">1.</span> <span class="nav-text">数据删除流程</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#重建表"><span class="nav-number">2.</span> <span class="nav-text">重建表</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Tian Weilong"
+      src="https://avatars1.githubusercontent.com/u/3870357?v=3&s=460">
+  <p class="site-author-name" itemprop="name">Tian Weilong</p>
+  <div class="site-description" itemprop="description">LOVE wat u do. DO it GREAT.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">20</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/categories/">
+        <span class="site-state-item-count">4</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+        <span class="site-state-item-count">36</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2020</span>
+  <span class="with-love">
+    <i class="fa fa-user"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Tian Weilong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+<script src="/js/utils.js"></script><script src="/js/motion.js"></script>
+<script src="/js/schemes/muse.js"></script>
+<script src="/js/next-boot.js"></script><!-- hexo-inject:begin --><!-- hexo-inject:end -->
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

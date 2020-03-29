@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <!-- hexo-inject:begin --><!-- hexo-inject:end --><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 3.9.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/font-awesome.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"blog.tianwl.com","root":"/","scheme":"Muse","version":"7.7.2","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="在前面Mysql索引学习笔记一文中，已经介绍了一些索引模型和相关的实现原理，这篇文章我们来结合实际案例看一下在使用Mysql时应该如何才能选择合适的索引。">
+<meta name="keywords" content="mysql,索引,普通索引,唯一索引">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Mysql如何选择合适的索引">
+<meta property="og:url" content="http://blog.tianwl.com/2019/11/02/Mysql如何选择合适的索引/index.html">
+<meta property="og:site_name" content="VINO">
+<meta property="og:description" content="在前面Mysql索引学习笔记一文中，已经介绍了一些索引模型和相关的实现原理，这篇文章我们来结合实际案例看一下在使用Mysql时应该如何才能选择合适的索引。">
+<meta property="og:locale" content="zh-CN">
+<meta property="og:image" content="http://blog.tianwl.com/2019/11/02/Mysql如何选择合适的索引/index/update.png">
+<meta property="og:image" content="http://blog.tianwl.com/2019/11/02/Mysql如何选择合适的索引/index/read.png">
+<meta property="og:updated_time" content="2020-03-28T13:55:03.326Z">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Mysql如何选择合适的索引">
+<meta name="twitter:description" content="在前面Mysql索引学习笔记一文中，已经介绍了一些索引模型和相关的实现原理，这篇文章我们来结合实际案例看一下在使用Mysql时应该如何才能选择合适的索引。">
+<meta name="twitter:image" content="http://blog.tianwl.com/2019/11/02/Mysql如何选择合适的索引/index/update.png">
+
+<link rel="canonical" href="http://blog.tianwl.com/2019/11/02/Mysql如何选择合适的索引/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>Mysql如何选择合适的索引 | VINO</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript><!-- hexo-inject:begin --><!-- hexo-inject:end -->
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <!-- hexo-inject:begin --><!-- hexo-inject:end --><div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">VINO</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-fw fa-home"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-fw fa-archive"></i>归档</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post">
+            
+
+  <div class="posts-expand">
+      
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="http://blog.tianwl.com/2019/11/02/Mysql如何选择合适的索引/index.html">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars1.githubusercontent.com/u/3870357?v=3&s=460">
+      <meta itemprop="name" content="Tian Weilong">
+      <meta itemprop="description" content="LOVE wat u do. DO it GREAT.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="VINO">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Mysql如何选择合适的索引
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="fa fa-calendar-o"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2019-11-02 21:36:00" itemprop="dateCreated datePublished" datetime="2019-11-02T21:36:00+08:00">2019-11-02</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="fa fa-folder-o"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/数据库/" itemprop="url" rel="index"><span itemprop="name">数据库</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>在前面<a href="/2019/10/28/Mysql索引学习笔记/index.html" title="Mysql索引学习笔记">Mysql索引学习笔记</a>一文中，已经介绍了一些索引模型和相关的实现原理，这篇文章我们来结合实际案例看一下在使用Mysql时应该如何才能选择合适的索引。</p>
+<a id="more"></a>
+<h3 id="普通索引还是唯一索引？"><a href="#普通索引还是唯一索引？" class="headerlink" title="普通索引还是唯一索引？"></a>普通索引还是唯一索引？</h3><h4 id="查询过程"><a href="#查询过程" class="headerlink" title="查询过程"></a>查询过程</h4><p>假设你在维护一个在线招聘系统，每个求职者都有一个唯一的身份证号，而且业务代码已经保证了不会写入两个重复的身份证号。有一个场景是通过身份证号查询求职者相关信息，具体语句如下：<br><figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">select * from employee where id_number = &apos;441023199810230210&apos;;</span><br></pre></td></tr></table></figure></p>
+<p>考虑到<code>employee</code>表数据量较大，你肯定会考虑在<code>id_number</code>上加索引，由于身份证号字段本身比较大，用做主键可能不太合适。那么就只剩下两个选择，要么给它建一个唯一索引，要么给它建一个普通索引，但是从性能的角度考虑，究竟应该选择普通索引还是唯一索引呢？</p>
+<p>这个查询语句在索引树上查找的过程，先是通过从树根开始，按层搜索到叶子节点，定位到具体的数据页后，在数据页内部再通过二分法定位记录。</p>
+<ul>
+<li>对于普通索引来说，查到满足条件的第一个记录后，需要查找下一个记录，直到碰到第一个不满足 id_number=’441023199810230210’的记录。</li>
+<li>对于唯一索引来说，由于它本身就定义了唯一性，所以在查到第一个记录后，就会停止往下搜索。</li>
+</ul>
+<p>我们现在来分析一下这个不同带来的性能差距到底有多大。由于InnoDB的数据是按数据页为单位来读写的，每个数据页的大小默认是16KB，当找到id_number=’441023199810230210’的记录时，它所在的数据页就都在内存里了。那么对于普通索引来说，多出来的那一次查找和判断操作，只需要一次指针寻找和一次计算。而对于比较极端的跨页的情况，操作会稍微复杂一些，可能需要将下一个数据页读入内存再判断。但是一个16KB的数据页，可以存放几百个索引key，遇到跨页的概率几乎可以忽略。因此在这一点上，普通索引和唯一索引的性能差异几乎相同。</p>
+<h4 id="更新过程"><a href="#更新过程" class="headerlink" title="更新过程"></a>更新过程</h4><h5 id="change-buffer"><a href="#change-buffer" class="headerlink" title="change buffer"></a>change buffer</h5><p>当需要更新一个数据时，如果数据页在内存中就直接更新，否则InnoDB会将这些更新操作缓存在<code>change buffer</code> (写缓冲)中，这样就不需要从磁盘中读入这个数据页了。在下次需要访问这个数据页的时候，将数据页读入内存，然后执行<code>change buffer</code>中与这个页有关的操作，这个过程称为merge，除此之外，系统有后台线程也会定期merge，在数据库正常关闭的过程中，也会执行merge。</p>
+<p>如果能够将操作先记录在<code>change buffer</code>，减少读磁盘，语句的执行速度会得到明显的提升。那么什么条件下可以使用<code>change buffer</code>呢？</p>
+<p>对于唯一索引来说，由于要做唯一性判断，在执行更新操作时必须将数据页读入内存，而如果都已经读入内存了，那直接更新内存会更快，也就没有必要使用<code>change buffer</code>了。实际上也只有普通索引可以使用<code>change buffer</code>。</p>
+<p>那么对于一条插入记录，如果目标页不在内存中：</p>
+<ul>
+<li>如果是唯一索引，需要将数据页读入内存，判断到没有冲突，插入这个记录，语句执行结束。</li>
+<li>如果是普通索引，则是将记录更新在<code>change buffer</code>，语句执行就结束了。</li>
+</ul>
+<p>而将数据从磁盘读入内存涉及随机IO的访问，是数据库里面成本最高的操作之一，因此<code>change buffer</code>对更新性能的提升会很明显。</p>
+<p>因为merge的时候是真正进行数据更新的时候，而<code>change buffer</code>的主要目的就是讲记录的变更动作缓存下来，在一个数据页做merge之前，<code>change buffer</code>记录的变更越多，收益就越大。因此对于写多读少的业务比如账单类、日志类业务，<code>change buffer</code>使用效果会很好。</p>
+<p>综合来看，唯一索引和普通索引在查询性能上几乎没差别，主要考虑更新对性能的影响，因此应该尽量选择普通索引。</p>
+<p>如果所有的更新后面，都马上伴随着对这个记录的查询，会立即触发merge过程，这样随机IO的次数不会减少，反而增加了<code>change buffer</code>的维护代价，那么此时应该关闭<code>change buffer</code>。</p>
+<p>理解了<code>change buffer</code>的原理，你可能会想到之前在 <a href="/2019/10/27/Mysql日志模块学习笔记/index.html" title="Mysql日志模块学习笔记">Mysql日志模块学习笔记</a>中提到的<code>redo log</code>，它提升性能的核心机制，也是尽量减少随机读写。下面我们通过一个实际的案例来看看它们的区别，我们要执行一个这样的插入语句：<br><figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">insert into `demo`(`id`, `count`) values (24, 14), (25, 35);</span><br></pre></td></tr></table></figure></p>
+<p>假设当前<code>count</code>索引树的状态，查找到位置后， count=14所在的数据页在内存（InnoDB buffer pool）中，count=35所在的数据页不在内存中，下图是带<code>change buffer</code>的更新过程示意图：</p>
+<p><img src="/2019/11/02/Mysql如何选择合适的索引/index/update.png" alt="带change buffer的更新过程示意图"><br><!-- 
+ZGlncmFwaCBHIHsNCiAgICBmb250bmFtZT0iRmFuZ3NvbmciDQogICAgY29tcG91bmQ9dHJ1ZQ0K
+ICAgIG5ld3Jhbms9dHJ1ZQ0KICAgIGxhYmVsPSLluKZjaGFuZ2UgYnVmZmVy55qE5pu05paw6L+H
+56iLXG5cbiINCiAgICBsYWJlbGxvYz10DQogICAgDQogICAgbm9kZVtmb250bmFtZT0iRmFuZ3Nv
+bmciXQ0KICAgIGVkZ2VbZm9udG5hbWU9IkZhbmdzb25nIl0NCg0KICAgIHN1YmdyYXBoIGNsdXN0
+ZXJfMSB7DQogICAgICAgIGxhYmVsPSJJbm5vREIgYnVmZmVyIHBvb2wiDQogICAgICAgIGZvbnRj
+b2xvcj0iY29yYWwiDQoNCiAgICAgICAgc3ViZ3JhcGggY2x1c3Rlcl8xMSB7DQogICAgICAgICAg
+ICBsYWJlbD0iY2hhbmdlIGJ1ZmZlciINCiAgICAgICAgICAgIGZvbnRjb2xvcj0iIg0KICAgICAg
+ICAgICAgcDJbc2hhcGU9bm9uZSwgbGFiZWw9PA0KICAgICAgICAgICAgICAgIDx0YWJsZSBib3Jk
+ZXI9IjAiIGNlbGxzcGFjaW5nPSIwIiBjZWxsYm9yZGVyPSIxIj4NCiAgICAgICAgICAgICAgICAg
+ICAgPHRyPg0KICAgICAgICAgICAgICAgICAgICAgICAgPHRkIGJnY29sb3I9ImN5YW4yIj7nrKzk
+uozmraU8L3RkPg0KICAgICAgICAgICAgICAgICAgICAgICAgPHRkPmFkZCAoMjUsIDM1KSB0byBw
+YWdlIDI8L3RkPg0KICAgICAgICAgICAgICAgICAgICA8L3RyPg0KICAgICAgICAgICAgICAgIDwv
+dGFibGU+DQogICAgICAgICAgICA+XQ0KICAgICAgICB9DQoNCiAgICAgICAgc3ViZ3JhcGggY2x1
+c3Rlcl8xMiB7DQogICAgICAgICAgICBsYWJlbD0icGFnZSAxIg0KICAgICAgICAgICAgZm9udGNv
+bG9yPSIiDQogICAgICAgICAgICBwMVtzaGFwZT1ub25lLCBsYWJlbD08DQogICAgICAgICAgICAg
+ICAgPHRhYmxlIGJvcmRlcj0iMCIgY2VsbHNwYWNpbmc9IjAiIGNlbGxib3JkZXI9IjEiPg0KICAg
+ICAgICAgICAgICAgICAgICA8dHI+DQogICAgICAgICAgICAgICAgICAgICAgICA8dGQgYmdjb2xv
+cj0iY3lhbjIiPuesrOS4gOatpTwvdGQ+DQogICAgICAgICAgICAgICAgICAgICAgICA8dGQ+KGlk
+MSwgY291bnQxKTwvdGQ+DQogICAgICAgICAgICAgICAgICAgICAgICA8dGQgcG9ydD0icDIiIGJn
+Y29sb3I9Im9yYW5nZSI+KDI0LCAxNCk8L3RkPg0KICAgICAgICAgICAgICAgICAgICAgICAgPHRk
+PihpZDIsIGNvdW50Mik8L3RkPg0KICAgICAgICAgICAgICAgICAgICA8L3RyPg0KICAgICAgICAg
+ICAgICAgIDwvdGFibGU+DQogICAgICAgICAgICA+XQ0KICAgICAgICB9DQogICAgfQ0KDQogICAg
+c3ViZ3JhcGggY2x1c3Rlcl8yIHsNCiAgICAgICAgbGFiZWw9InJlZG8gbG9nKGliLWxvZy1maWxl
+WCkiDQogICAgICAgIGZvbnRjb2xvcj0iY29yYWwiDQogICAgICAgIHIxW3NoYXBlPW5vbmUsIGxh
+YmVsPTwNCiAgICAgICAgICAgICAgICA8dGFibGUgYm9yZGVyPSIwIiBjZWxsc3BhY2luZz0iMCIg
+Y2VsbGJvcmRlcj0iMSI+DQogICAgICAgICAgICAgICAgICAgIDx0cj4NCiAgICAgICAgICAgICAg
+ICAgICAgICAgIDx0ZCBiZ2NvbG9yPSJjeWFuMiI+56ys5LiJ5q2lPC90ZD4NCiAgICAgICAgICAg
+ICAgICAgICAgICAgIDx0ZD5hZGQgKDI0LCAxNCkgdG8gcGFnZSAxPC90ZD4NCiAgICAgICAgICAg
+ICAgICAgICAgPC90cj4NCg0KICAgICAgICAgICAgICAgICAgICA8dHI+DQogICAgICAgICAgICAg
+ICAgICAgICAgICA8dGQgYmdjb2xvcj0iY3lhbjIiPuesrOWbm+atpTwvdGQ+DQogICAgICAgICAg
+ICAgICAgICAgICAgICA8dGQ+bmV3IGNoYW5nZSBidWZmZXIgaXRlbSA8YnIvPiAgYWRkICgyNSwg
+MzUpIHRvIHBhZ2UgMiA8L3RkPg0KICAgICAgICAgICAgICAgICAgICA8L3RyPg0KICAgICAgICAg
+ICAgICAgIDwvdGFibGU+DQogICAgICAgICAgICA+XQ0KICAgIH0NCg0KICAgIHN1YmdyYXBoIGNs
+dXN0ZXJfMyB7DQogICAgICAgIGxhYmVsPSJzeXN0ZW0gdGFibGUgc3BhY2UoaWJkYXRhMSkiDQog
+ICAgICAgIGZvbnRjb2xvcj0iY29yYWwiDQogICAgICAgIHN1YmdyYXBoIGNsdXN0ZXJfMzEgew0K
+ICAgICAgICAgICAgbGFiZWw9ImNoYW5nZSBidWZmZXIiDQogICAgICAgICAgICBmb250Y29sb3I9
+IiINCiAgICAgICAgICAgIHMxW3NoYXBlPWJveCwgbGFiZWw9ImFkZCAoMjUsIDM1KSB0byBwYWdl
+IDIiLCBzdHlsZT1kYXNoZWRdDQogICAgICAgIH0NCiAgICB9DQoNCiAgICBzdWJncmFwaCBjbHVz
+dGVyXzQgew0KICAgICAgICBsYWJlbD0iZGF0YSAoZGVtby5pYmQpIg0KICAgICAgICBmb250Y29s
+b3I9ImNvcmFsIg0KICAgICAgICBkMVtzaGFwZT1yZWNvcmQsIGxhYmVsPSJ7e3s8cDE+IHBhZ2Ug
+MSB8IHsoYSxiKSB8KGMsIGQpfX0gfCAuLi4gfCB7cGFnZSAyIHwgeyhlLGYpIHwoZywgaCl9fX0g
+fSJdDQogICAgfQ0KDQogICAge3Jhbms9c2FtZSBwMSBwMiByMX0NCiAgICB7cmFuaz1zYW1lIHMx
+IGQxfQ0KICAgIHAxLT5kMTpwMVtzdHlsZT1kYXNoZWQsIGNvbG9yPWJsdWVdDQogICAgcDItPnMx
+W3N0eWxlPWRhc2hlZCwgY29sb3I9Ymx1ZV0NCiANCn0=
+ --></p>
+<p>上图中主要包含4个部分： 内存、<code>redo log</code>(ib_log_fileX)、数据表空间(demo.ibd)、系统表空间(ibdata1)。这条插入语句做了如下的操作：</p>
+<ol>
+<li>page 1 在内存中，直接更新内存 （图中第一步）</li>
+<li>page 2 没有在内存中，就在内存的<code>change buffer</code>区域记录下“add (25, 35) to page 2”这个信息 （图中第二步）</li>
+<li>将上述两个动作计入<code>redo log</code>（图中第三步和第四步）</li>
+</ol>
+<p>做完这些，事务就可以完成了，因此执行这条插入语句的成本很低，就是写了两次内存和一次磁盘（顺序写），图中蓝色虚线箭头，是后台操作，不影响更新的响应时间。</p>
+<p>再来看看读请求，假设我们要执行如下语句：<br><figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">select * from demo where count in (14, 35);</span><br></pre></td></tr></table></figure></p>
+<p>下面是带<code>change buffer</code>的读过程示意图：<br><img src="/2019/11/02/Mysql如何选择合适的索引/index/read.png" alt="带change buffer的读过程示意图"></p>
+<!-- ZGlncmFwaCBHIHsNCiAgICBmb250bmFtZT0iRmFuZ3NvbmciDQogICAgY29tcG91bmQ9dHJ1ZQ0K
+ICAgIG5ld3Jhbms9dHJ1ZQ0KICAgIGxhYmVsPSLluKZjaGFuZ2UgYnVmZmVy55qE5pu05paw6L+H
+56iLXG5cbiINCiAgICBsYWJlbGxvYz10DQogICAgDQogICAgbm9kZVtmb250bmFtZT0iRmFuZ3Nv
+bmciXQ0KICAgIGVkZ2VbZm9udG5hbWU9IkZhbmdzb25nIl0NCg0KICAgIHN1YmdyYXBoIGNsdXN0
+ZXJfMSB7DQogICAgICAgIGxhYmVsPSJJbm5vREIgYnVmZmVyIHBvb2wiDQogICAgICAgIGZvbnRj
+b2xvcj0iY29yYWwiDQoNCiAgICAgICAgc3ViZ3JhcGggY2x1c3Rlcl8xMSB7DQogICAgICAgICAg
+ICBsYWJlbD0iY2hhbmdlIGJ1ZmZlciINCiAgICAgICAgICAgIGZvbnRjb2xvcj0iIg0KICAgICAg
+ICAgICAgYzFbc2hhcGU9bm9uZSwgbGFiZWw9PA0KICAgICAgICAgICAgICAgIDx0YWJsZSBib3Jk
+ZXI9IjAiIGNlbGxzcGFjaW5nPSIwIiBjZWxsYm9yZGVyPSIxIj4NCiAgICAgICAgICAgICAgICAg
+ICAgPHRyPg0KICAgICAgICAgICAgICAgICAgICAgICAgPHRkPmFkZCAoMjUsIDM1KSB0byBwYWdl
+IDI8L3RkPg0KICAgICAgICAgICAgICAgICAgICA8L3RyPg0KICAgICAgICAgICAgICAgIDwvdGFi
+bGU+DQogICAgICAgICAgICA+XQ0KICAgICAgICB9DQoNCiAgICAgICAgc3ViZ3JhcGggY2x1c3Rl
+cl8xMiB7DQogICAgICAgICAgICBsYWJlbD0icGFnZSAxIg0KICAgICAgICAgICAgZm9udGNvbG9y
+PSIiDQogICAgICAgICAgICBwMVtzaGFwZT1ub25lLCBsYWJlbD08DQogICAgICAgICAgICAgICAg
+PHRhYmxlIGJvcmRlcj0iMCIgY2VsbHNwYWNpbmc9IjAiIGNlbGxib3JkZXI9IjEiPg0KICAgICAg
+ICAgICAgICAgICAgICA8dHI+DQogICAgICAgICAgICAgICAgICAgICAgICA8dGQ+KGlkMSwgY291
+bnQxKTwvdGQ+DQogICAgICAgICAgICAgICAgICAgICAgICA8dGQgcG9ydD0icDIiIGJnY29sb3I9
+Im9yYW5nZSI+KDI0LCAxNCk8L3RkPg0KICAgICAgICAgICAgICAgICAgICAgICAgPHRkPihpZDIs
+IGNvdW50Mik8L3RkPg0KICAgICAgICAgICAgICAgICAgICA8L3RyPg0KICAgICAgICAgICAgICAg
+IDwvdGFibGU+DQogICAgICAgICAgICA+XQ0KICAgICAgICB9DQoNCiAgICAgICAgc3ViZ3JhcGgg
+Y2x1c3Rlcl8xMyB7DQogICAgICAgICAgICBsYWJlbD0icGFnZSAyIg0KICAgICAgICAgICAgZm9u
+dGNvbG9yPSIiDQogICAgICAgICAgICBwMltzaGFwZT1ub25lLCBsYWJlbD08DQogICAgICAgICAg
+ICAgICAgPHRhYmxlIGJvcmRlcj0iMCIgY2VsbHNwYWNpbmc9IjAiIGNlbGxib3JkZXI9IjEiPg0K
+ICAgICAgICAgICAgICAgICAgICA8dHI+DQogICAgICAgICAgICAgICAgICAgICAgICA8dGQ+KGlk
+MywgY291bnQzKTwvdGQ+DQogICAgICAgICAgICAgICAgICAgICAgICA8dGQgcG9ydD0icDIiIGJn
+Y29sb3I9Im9yYW5nZSI+KDI1LCAzNSk8L3RkPg0KICAgICAgICAgICAgICAgICAgICAgICAgPHRk
+PihpZDQsIGNvdW50NCk8L3RkPg0KICAgICAgICAgICAgICAgICAgICA8L3RyPg0KICAgICAgICAg
+ICAgICAgIDwvdGFibGU+DQogICAgICAgICAgICA+XQ0KICAgICAgICB9DQoNCg0KICAgIH0NCg0K
+DQogICAgc3ViZ3JhcGggY2x1c3Rlcl80IHsNCiAgICAgICAgbGFiZWw9ImRhdGEgKGRlbW8uaWJk
+KSINCiAgICAgICAgZm9udGNvbG9yPSJjb3JhbCINCiAgICAgICAgZDFbc2hhcGU9cmVjb3JkLCBs
+YWJlbD0ie3t7PHAxPiBwYWdlIDEgfCB7KGEsYikgfChjLCBkKX19IHwgLi4uIHwgezxwMj5wYWdl
+IDIgfCB7KGUsZikgfChnLCBoKX19fSB9Il0NCiAgICB9DQoNCiAgICByMVtsYWJlbD0icmVhZCBw
+YWdlIDEiLCBzaGFwZT1ib3gsIHN0eWxlPWZpbGxlZCwgZmlsbGNvbG9yPWNhZGV0Ymx1ZTFdDQog
+ICAgcjJbbGFiZWw9InJlYWQgcGFnZSAyIiwgc2hhcGU9Ym94LCBzdHlsZT1maWxsZWQsIGZpbGxj
+b2xvcj1jYWRldGJsdWUxXQ0KDQogICAge3Jhbms9c2FtZSBjMSBwMSByMX0NCiAgICB7cmFuaz1z
+YW1lIHAyIHIyfQ0KICAgIHAxLT5yMVtjb2xvcj1ibHVlXQ0KICAgIHAyLT5yMltjb2xvcj1ncmVl
+biwgd2VpZ2h0PTVdDQoNCg0KICAgIGMxLT5wMjp3W2NvbG9yPWdyZWVuXQ0KICAgIGQxOnAyLT5w
+Mjp3W2NvbG9yPWdyZWVuXQ0KDQogICAgcDItPmQxW3N0eWxlPWludmlzXQ0KICAgIGMxLT5wMVt3
+ZWlnaHQ9MCwgc3R5bGU9aW52aXNdDQp9 -->
+<p>从图中可以看出，读page 1的时候，直接从内存返回（图中蓝色箭头部分），要读page 2的时候，需要把它从磁盘读入内存中，然后应用<code>change buffer</code>里面的操作日志，生成一个正确的结果并返回（图中绿色箭头所示部分）。</p>
+<p>由此可以得出一个结论： <code>redo log</code>主要节省的是随机写磁盘的IO消耗（转为顺序写），而<code>change buffer</code>主要节省的则是随机读磁盘的IO消耗（只有需要读某个数据页时，这个数据页才会被读入内存，比如更新的时候就不会读入内存）。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/mysql/" rel="tag"># mysql</a>
+              <a href="/tags/索引/" rel="tag"># 索引</a>
+              <a href="/tags/普通索引/" rel="tag"># 普通索引</a>
+              <a href="/tags/唯一索引/" rel="tag"># 唯一索引</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2019/10/30/Mysql锁学习笔记/index.html" rel="prev" title="Mysql锁学习笔记">
+      <i class="fa fa-chevron-left"></i> Mysql锁学习笔记
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2019/11/04/如何避免Mysql优化器选错索引/index.html" rel="next" title="如何避免Mysql优化器选错索引">
+      如何避免Mysql优化器选错索引 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+  </div>
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-3"><a class="nav-link" href="#普通索引还是唯一索引？"><span class="nav-number">1.</span> <span class="nav-text">普通索引还是唯一索引？</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#查询过程"><span class="nav-number">1.1.</span> <span class="nav-text">查询过程</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#更新过程"><span class="nav-number">1.2.</span> <span class="nav-text">更新过程</span></a><ol class="nav-child"><li class="nav-item nav-level-5"><a class="nav-link" href="#change-buffer"><span class="nav-number">1.2.1.</span> <span class="nav-text">change buffer</span></a></li></ol></li></ol></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Tian Weilong"
+      src="https://avatars1.githubusercontent.com/u/3870357?v=3&s=460">
+  <p class="site-author-name" itemprop="name">Tian Weilong</p>
+  <div class="site-description" itemprop="description">LOVE wat u do. DO it GREAT.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">20</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/categories/">
+        <span class="site-state-item-count">4</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+        <span class="site-state-item-count">36</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2020</span>
+  <span class="with-love">
+    <i class="fa fa-user"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Tian Weilong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+<script src="/js/utils.js"></script><script src="/js/motion.js"></script>
+<script src="/js/schemes/muse.js"></script>
+<script src="/js/next-boot.js"></script><!-- hexo-inject:begin --><!-- hexo-inject:end -->
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

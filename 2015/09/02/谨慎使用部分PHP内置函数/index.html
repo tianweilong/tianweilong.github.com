@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <!-- hexo-inject:begin --><!-- hexo-inject:end --><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 3.9.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/font-awesome.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"blog.tianwl.com","root":"/","scheme":"Muse","version":"7.7.2","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="PHP为方便开发者，提供了大量的内置函数。通常来说，内置函数的性能和底层相应的C函数性能相当。正因为如此，部分开发者在选择函数的时候往往只看能不能实现自己想要的功能，而忽视了函数本身可能存在的性能问题。">
+<meta name="keywords" content="PHP性能">
+<meta property="og:type" content="article">
+<meta property="og:title" content="谨慎使用部分PHP内置函数">
+<meta property="og:url" content="http://blog.tianwl.com/2015/09/02/谨慎使用部分PHP内置函数/index.html">
+<meta property="og:site_name" content="VINO">
+<meta property="og:description" content="PHP为方便开发者，提供了大量的内置函数。通常来说，内置函数的性能和底层相应的C函数性能相当。正因为如此，部分开发者在选择函数的时候往往只看能不能实现自己想要的功能，而忽视了函数本身可能存在的性能问题。">
+<meta property="og:locale" content="zh-CN">
+<meta property="og:updated_time" content="2020-03-28T13:55:03.318Z">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="谨慎使用部分PHP内置函数">
+<meta name="twitter:description" content="PHP为方便开发者，提供了大量的内置函数。通常来说，内置函数的性能和底层相应的C函数性能相当。正因为如此，部分开发者在选择函数的时候往往只看能不能实现自己想要的功能，而忽视了函数本身可能存在的性能问题。">
+
+<link rel="canonical" href="http://blog.tianwl.com/2015/09/02/谨慎使用部分PHP内置函数/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>谨慎使用部分PHP内置函数 | VINO</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript><!-- hexo-inject:begin --><!-- hexo-inject:end -->
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <!-- hexo-inject:begin --><!-- hexo-inject:end --><div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">VINO</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-fw fa-home"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-fw fa-archive"></i>归档</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post">
+            
+
+  <div class="posts-expand">
+      
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="http://blog.tianwl.com/2015/09/02/谨慎使用部分PHP内置函数/index.html">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars1.githubusercontent.com/u/3870357?v=3&s=460">
+      <meta itemprop="name" content="Tian Weilong">
+      <meta itemprop="description" content="LOVE wat u do. DO it GREAT.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="VINO">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          谨慎使用部分PHP内置函数
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="fa fa-calendar-o"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2015-09-02 16:24:09" itemprop="dateCreated datePublished" datetime="2015-09-02T16:24:09+08:00">2015-09-02</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="fa fa-folder-o"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/PHP/" itemprop="url" rel="index"><span itemprop="name">PHP</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>PHP为方便开发者，提供了大量的内置函数。通常来说，内置函数的性能和底层相应的C函数性能相当。正因为如此，部分开发者在选择函数的时候往往只看能不能实现自己想要的功能，而忽视了函数本身可能存在的性能问题。</p>
+<a id="more"></a>
+<p>举个简单的例子，如果我们要从一个索引数组里随机取出一个键值，有人可能会想到使用内置函数<code>array_rand()</code>先取出一个随机键名，再通过键名找到对应的键值，这确实能解决我们的问题，但是有没有效率更高的办法呢？因为是索引数组，我们是不是可以简单的生成一个0到n-1(n为数组大小)之间的随机数作为随机键名？下面让我们来比较一下这两种方式的效率，代码如下：<br><figure class="highlight php"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">&lt;?php</span></span><br><span class="line"></span><br><span class="line">$loops = <span class="number">10000</span>; <span class="comment">//循环次数</span></span><br><span class="line">$arraySize = <span class="number">100000</span>; <span class="comment">//数组大小</span></span><br><span class="line">$arr = range(<span class="number">1</span>, $arraySize);</span><br><span class="line"></span><br><span class="line">$startTime = microtime(<span class="keyword">true</span>);</span><br><span class="line"></span><br><span class="line"><span class="keyword">for</span> ($i = <span class="number">0</span>; $i &lt; $loops; $i++)</span><br><span class="line">&#123;</span><br><span class="line">    $randKey = array_rand($arr, <span class="number">1</span>);<span class="comment">//通过键名取键值的方法都一样，此处省略</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">$endTime1 = microtime(<span class="keyword">true</span>);</span><br><span class="line"></span><br><span class="line"><span class="keyword">for</span> ($i = <span class="number">0</span>; $i &lt; $loops; $i++)</span><br><span class="line">&#123;</span><br><span class="line">    $randKey = rand(<span class="number">0</span>, $arraySize - <span class="number">1</span>);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">$endTime2 = microtime(<span class="keyword">true</span>);</span><br><span class="line"></span><br><span class="line"><span class="keyword">echo</span> $endTime1 - $startTime, PHP_EOL, $endTime2 - $endTime1;</span><br></pre></td></tr></table></figure></p>
+<p>我分别针对四组数组大小（100，1000，10000，100000）做了下性能测试，结果如下：</p>
+<div class="table-container">
+<table>
+<thead>
+<tr>
+<th style="text-align:left">使用方法</th>
+<th style="text-align:left">数组大小</th>
+<th style="text-align:left">循环次数</th>
+<th style="text-align:left">耗时（秒）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">array_rand</td>
+<td style="text-align:left">100</td>
+<td style="text-align:left">10000</td>
+<td style="text-align:left">0.0727</td>
+</tr>
+<tr>
+<td style="text-align:left">rand</td>
+<td style="text-align:left">100</td>
+<td style="text-align:left">10000</td>
+<td style="text-align:left">0.0680</td>
+</tr>
+<tr>
+<td style="text-align:left">array_rand</td>
+<td style="text-align:left">1000</td>
+<td style="text-align:left">10000</td>
+<td style="text-align:left">0.1058</td>
+</tr>
+<tr>
+<td style="text-align:left">rand</td>
+<td style="text-align:left">1000</td>
+<td style="text-align:left">10000</td>
+<td style="text-align:left">0.0641</td>
+</tr>
+<tr>
+<td style="text-align:left">array_rand</td>
+<td style="text-align:left">10000</td>
+<td style="text-align:left">10000</td>
+<td style="text-align:left">0.4813</td>
+</tr>
+<tr>
+<td style="text-align:left">rand</td>
+<td style="text-align:left">10000</td>
+<td style="text-align:left">10000</td>
+<td style="text-align:left">0.0674</td>
+</tr>
+<tr>
+<td style="text-align:left">array_rand</td>
+<td style="text-align:left">100000</td>
+<td style="text-align:left">10000</td>
+<td style="text-align:left">4.0276</td>
+</tr>
+<tr>
+<td style="text-align:left">rand</td>
+<td style="text-align:left">100000</td>
+<td style="text-align:left">10000</td>
+<td style="text-align:left">0.0675</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>从上面的表格可以看出：</p>
+<ol>
+<li>当数组较小时，array_rand方法和rand方法耗时差别不大，随着数组的增大，两者的差别越来越大，当数组大小达到十万级别时，两者性能差别高达60多倍。</li>
+<li>数组大小对rand方法获取随机键值几乎没有影响。</li>
+</ol>
+<p>另外还有一个比较常见的问题：判断一个数组中是否存在某个键名，有人可能会用<code>array_key_exists()</code>，而另外一些人会用<code>isset()</code>，这两者的性能究竟有没有差别呢？同样做个测试，代码如下：<br><figure class="highlight php"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">&lt;?php</span></span><br><span class="line"></span><br><span class="line">$arraySize = <span class="number">100</span>;</span><br><span class="line">$arr = range(<span class="number">1</span>, $arraySize);</span><br><span class="line"></span><br><span class="line">$startTime = microtime(<span class="keyword">true</span>);</span><br><span class="line"></span><br><span class="line"><span class="keyword">for</span> ($i = <span class="number">0</span>; $i &lt; <span class="number">10000</span>; $i++)</span><br><span class="line">&#123;</span><br><span class="line">    $hasKey = <span class="keyword">isset</span>($arr[<span class="string">'a'</span>]);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">$endTime1 = microtime(<span class="keyword">true</span>);</span><br><span class="line"></span><br><span class="line"><span class="keyword">for</span> ($i = <span class="number">0</span>; $i &lt; <span class="number">10000</span>; $i++)</span><br><span class="line">&#123;</span><br><span class="line">    $hasKey = array_key_exists(<span class="string">'a'</span>, $arr);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">$endTime2 = microtime(<span class="keyword">true</span>);</span><br><span class="line"></span><br><span class="line"><span class="keyword">echo</span> $endTime1 - $startTime, PHP_EOL, $endTime2 - $endTime1;</span><br></pre></td></tr></table></figure></p>
+<p>同样地针对四组数组大小（100，1000，10000，100000）做了下性能测试，结果如下：</p>
+<div class="table-container">
+<table>
+<thead>
+<tr>
+<th style="text-align:left">使用方法</th>
+<th style="text-align:left">数组大小</th>
+<th style="text-align:left">循环次数</th>
+<th style="text-align:left">耗时（秒）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">isset</td>
+<td style="text-align:left">100</td>
+<td style="text-align:left">10000</td>
+<td style="text-align:left">0.0008</td>
+</tr>
+<tr>
+<td style="text-align:left">array_key_exists</td>
+<td style="text-align:left">100</td>
+<td style="text-align:left">10000</td>
+<td style="text-align:left">0.0674</td>
+</tr>
+<tr>
+<td style="text-align:left">isset</td>
+<td style="text-align:left">1000</td>
+<td style="text-align:left">10000</td>
+<td style="text-align:left">0.0008</td>
+</tr>
+<tr>
+<td style="text-align:left">array_key_exists</td>
+<td style="text-align:left">1000</td>
+<td style="text-align:left">10000</td>
+<td style="text-align:left">0.0611</td>
+</tr>
+<tr>
+<td style="text-align:left">isset</td>
+<td style="text-align:left">10000</td>
+<td style="text-align:left">10000</td>
+<td style="text-align:left">0.0010</td>
+</tr>
+<tr>
+<td style="text-align:left">array_key_exists</td>
+<td style="text-align:left">10000</td>
+<td style="text-align:left">10000</td>
+<td style="text-align:left">0.0663</td>
+</tr>
+<tr>
+<td style="text-align:left">isset</td>
+<td style="text-align:left">100000</td>
+<td style="text-align:left">10000</td>
+<td style="text-align:left">0.0008</td>
+</tr>
+<tr>
+<td style="text-align:left">array_key_exists</td>
+<td style="text-align:left">100000</td>
+<td style="text-align:left">10000</td>
+<td style="text-align:left">0.0626</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>从上面的表格可以看出：</p>
+<ol>
+<li>数组大小对最终结果几乎没有影响(思考一下，为什么？)</li>
+<li><code>isset()</code>的效率始终是<code>array_key_exists()</code>效率的几十倍</li>
+</ol>
+<p>效率差别这么大，主要是因为<code>isset()</code>并不是真正意义上的”函数”，而是一种语言结构，因此在调用它的时候并没有产生函数调用的开销。</p>
+<p>说到函数调用开销的问题，我们可以做一个简单的验证，代码如下：<br><figure class="highlight php"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">&lt;?php</span></span><br><span class="line"></span><br><span class="line">$loops = <span class="number">10000</span>;</span><br><span class="line">$startTime = microtime(<span class="keyword">true</span>);</span><br><span class="line"></span><br><span class="line">$n = <span class="number">1</span>;</span><br><span class="line"><span class="keyword">for</span> ($i = <span class="number">0</span>; $i &lt; $loops; $i++)</span><br><span class="line">&#123;</span><br><span class="line">    $n++;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">$endTime1 = microtime(<span class="keyword">true</span>);</span><br><span class="line"></span><br><span class="line">$n = <span class="number">1</span>;</span><br><span class="line"><span class="keyword">for</span> ($i = <span class="number">0</span>; $i &lt; $loops; $i++)</span><br><span class="line">&#123;</span><br><span class="line">    plusN($n); <span class="comment">//内部执行的也是 $n++</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"></span><br><span class="line">$endTime2 = microtime(<span class="keyword">true</span>);</span><br><span class="line"></span><br><span class="line"><span class="keyword">echo</span> $endTime1 - $startTime, PHP_EOL, $endTime2 - $endTime1;</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">function</span> <span class="title">plusN</span><span class="params">(&amp;$n)</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">    $n++;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure></p>
+<p>执行上面代码后发现，对于1万次循环，第一种情况耗时为0.0008秒，而第二种情况耗时为0.0615秒，性能相差依旧是几十倍。这也给我们一个启示：出于性能考虑，在大循环（尤其是嵌套的大循环）内部，应尽量避免使用函数（可将函数的方法体移到循环内部）。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/PHP性能/" rel="tag"># PHP性能</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item"></div>
+      <div class="post-nav-item">
+    <a href="/2019/10/13/Mysql事务隔离实例分析/index.html" rel="next" title="Mysql事务隔离实例分析">
+      Mysql事务隔离实例分析 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+  </div>
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Tian Weilong"
+      src="https://avatars1.githubusercontent.com/u/3870357?v=3&s=460">
+  <p class="site-author-name" itemprop="name">Tian Weilong</p>
+  <div class="site-description" itemprop="description">LOVE wat u do. DO it GREAT.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">20</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/categories/">
+        <span class="site-state-item-count">4</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+        <span class="site-state-item-count">36</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2020</span>
+  <span class="with-love">
+    <i class="fa fa-user"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Tian Weilong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+<script src="/js/utils.js"></script><script src="/js/motion.js"></script>
+<script src="/js/schemes/muse.js"></script>
+<script src="/js/next-boot.js"></script><!-- hexo-inject:begin --><!-- hexo-inject:end -->
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>
